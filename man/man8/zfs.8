@@ -910,6 +910,12 @@ Controls whether the set-\fBUID\fR bit is respected for the file system. The def
 Like the \fBsharenfs\fR property, \fBshareiscsi\fR indicates whether a \fBZFS\fR volume is exported as an \fBiSCSI\fR target. The acceptable values for this property are \fBon\fR, \fBoff\fR, and \fBtype=disk\fR. The default value is \fBoff\fR. In the future, other target types might be supported. For example, \fBtape\fR.
 .sp
 You might want to set \fBshareiscsi=on\fR for a file system so that all \fBZFS\fR volumes within the file system are shared by default. However, setting this property on a file system has no direct effect.
+.sp
+The Linux implementation of \fBshareiscsi\fR uses \fBietadm\fR to add, remove and modify iSCSI targets. In addition to this, the module will use the optional script/binary named \fB/sbin/zfs_share_iscsi\fR. The only parameter to this script/binary is the TID number and this script is intended to allow administrators to allow custom commands to be done on the share/target.
+.sp
+The module will 'execute and forget'. Meaning, it will not care about exit code nor any output it gives. So if the script/binary fails for some reason, it is up to it to catch this. The ZFS module will not intervene.
+.sp
+The domainname needs to be set in \fB/proc/sys/kernel/domainname\fR for the driver to work out the iqn correctly. You can either set it by echo'ing the domain name to the file, OR set it using sysctl (usually \fB/etc/sysctl.conf\fR).
 .RE
 
 .sp
