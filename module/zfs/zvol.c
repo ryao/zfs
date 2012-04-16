@@ -534,6 +534,9 @@ zvol_write(void *arg)
 	dmu_tx_t *tx;
 	rl_t *rl;
 
+	gfp_t flag_override = KM_PUSHPAGE;
+	tsd_set(spl_tsd_alloc_flag, &flag_override);
+
 	if (req->cmd_flags & VDEV_REQ_FLUSH)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 
@@ -542,6 +545,7 @@ zvol_write(void *arg)
 	 */
 	if (size == 0) {
 		blk_end_request(req, 0, size);
+		tsd_set(*(uint_t *)&spl_tsd_alloc_flag, NULL);
 		return;
 	}
 
@@ -556,6 +560,7 @@ zvol_write(void *arg)
 		dmu_tx_abort(tx);
 		zfs_range_unlock(rl);
 		blk_end_request(req, -error, size);
+		tsd_set(*(uint_t *)&spl_tsd_alloc_flag, NULL);
 		return;
 	}
 
@@ -572,6 +577,7 @@ zvol_write(void *arg)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 
 	blk_end_request(req, -error, size);
+	tsd_set(spl_tsd_alloc_flag, NULL);
 }
 
 #ifdef HAVE_BLK_QUEUE_DISCARD
