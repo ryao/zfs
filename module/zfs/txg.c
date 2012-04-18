@@ -218,10 +218,26 @@ uint64_t
 txg_hold_open(dsl_pool_t *dp, txg_handle_t *th)
 {
 	tx_state_t *tx = &dp->dp_tx;
-	tx_cpu_t *tc = &tx->tx_cpu[CPU_SEQID];
+	tx_cpu_t *tc;
 	uint64_t txg;
 
+#ifdef _KERNEL
+	if (preempt_count() & PREEMPT_ACTIVE)
+	{
+		tc = &tx->tx_cpu[CPU_SEQID];
+		mutex_enter(&tc->tc_lock);
+	}
+	else
+	{
+		current_thread_info()->preempt_count |= PREEMPT_ACTIVE;
+		tc = &tx->tx_cpu[CPU_SEQID];
+		mutex_enter(&tc->tc_lock);
+		current_thread_info()->preempt_count &= ~PREEMPT_ACTIVE;
+	}
+#else
+	tc = &tx->tx_cpu[CPU_SEQID];
 	mutex_enter(&tc->tc_lock);
+#endif /* _KERNEL */
 
 	txg = tx->tx_open_txg;
 	tc->tc_count[txg & TXG_MASK]++;
