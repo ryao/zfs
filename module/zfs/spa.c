@@ -617,8 +617,9 @@ spa_get_errlists(spa_t *spa, avl_tree_t *last, avl_tree_t *scrub)
 
 static taskq_t *
 spa_taskq_create(spa_t *spa, const char *name, enum zti_modes mode,
-    uint_t value, uint_t flags)
+    uint_t value)
 {
+	uint_t flags = TASKQ_PREPOPULATE;
 	boolean_t batch = B_FALSE;
 
 	switch (mode) {
@@ -671,14 +672,11 @@ spa_create_zio_taskqs(spa_t *spa)
 			uint_t flags = 0;
 			char name[32];
 
-			if (t == ZIO_TYPE_WRITE)
-				flags |= TASKQ_NORECLAIM;
-
 			(void) snprintf(name, sizeof (name),
 			    "%s_%s", zio_type_name[t], zio_taskq_types[q]);
 
 			spa->spa_zio_taskq[t][q] =
-			    spa_taskq_create(spa, name, mode, value, flags);
+			    spa_taskq_create(spa, name, mode, value);
 		}
 	}
 }
