@@ -235,6 +235,7 @@ static avl_tree_t spa_l2cache_avl;
 
 kmem_cache_t *spa_buffer_pool;
 int spa_mode_global;
+char * zfs_rootpool = NULL;
 
 /*
  * ==========================================================================
@@ -1735,6 +1736,10 @@ spa_debug_enabled(spa_t *spa)
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+EXPORT_SYMBOL(zfs_rootpool);
+module_param(zfs_rootpool, charp, 0444);
+MODULE_PARM_DESC(zfs_rootpool, "ZFS Root Pool");
+
 /* Namespace manipulation */
 EXPORT_SYMBOL(spa_lookup);
 EXPORT_SYMBOL(spa_add);

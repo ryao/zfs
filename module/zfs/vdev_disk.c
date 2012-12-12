@@ -786,7 +786,7 @@ vdev_ops_t vdev_disk_ops = {
  * the device, and construct a configuration nvlist.
  */
 int
-vdev_disk_read_rootlabel(char *devpath, char *devid, nvlist_t **config)
+vdev_disk_read_rootlabel(const char *devpath, char *devid, nvlist_t **config)
 {
 	struct block_device *bdev;
 	vdev_label_t *label;
