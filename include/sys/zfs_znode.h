@@ -212,11 +212,11 @@ typedef struct znode {
 	struct znode	*z_xattr_parent;/* xattr parent znode */
 	list_node_t	z_link_node;	/* all znodes in fs link */
 	sa_handle_t	*z_sa_hdl;	/* handle to sa data */
-	boolean_t	z_is_sa;	/* are we native sa? */
-	boolean_t	z_is_zvol;	/* are we used by the zvol */
-	boolean_t	z_is_mapped;	/* are we mmap'ed */
-	boolean_t	z_is_ctldir;	/* are we .zfs entry */
-	boolean_t	z_is_stale;	/* are we stale due to rollback? */
+	boolean_t	z_is_sa:1;	/* are we native sa? */
+	boolean_t	z_is_zvol:1;	/* are we used by the zvol */
+	boolean_t	z_is_mapped:1;	/* are we mmap'ed */
+	boolean_t	z_is_ctldir:1;	/* are we .zfs entry */
+	boolean_t	z_is_stale:1;	/* are we stale due to rollback? */
 	struct inode	z_inode;	/* generic vfs inode */
 } znode_t;
 
