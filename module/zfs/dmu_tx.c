@@ -57,12 +57,30 @@ dmu_tx_stats_t dmu_tx_stats = {
 	{ "dmu_tx_quota",		KSTAT_DATA_UINT64 },
 };
 
+static kmem_cache_t *dmu_tx_cache;
+static kmem_cache_t *dmu_tx_hold_cache;
+static kmem_cache_t *dmu_tx_cb_cache;
 static kstat_t *dmu_tx_ksp;
 
+/* ARGSUSED */
+static int
+dmu_tx_cons(void *vbuf, void *unused, int kmflag)
+{
+       bzero(vbuf, sizeof (dmu_tx_t));
+       return (0);
+}
+
+/* ARGSUSED */
+static int
+dmu_tx_hold_cons(void *vbuf, void *unused, int kmflag)
+{
+       bzero(vbuf, sizeof (dmu_tx_hold_t));
+       return (0);
+}
 dmu_tx_t *
 dmu_tx_create_dd(dsl_dir_t *dd)
 {
-	dmu_tx_t *tx = kmem_zalloc(sizeof (dmu_tx_t), KM_PUSHPAGE);
+	dmu_tx_t *tx = kmem_cache_alloc(dmu_tx_cache, KM_PUSHPAGE);
 	tx->tx_dir = dd;
 	if (dd)
 		tx->tx_pool = dd->dd_pool;
@@ -140,7 +158,7 @@ dmu_tx_hold_object_impl(dmu_tx_t *tx, objset_t *os, uint64_t object,
 		}
 	}
 
-	txh = kmem_zalloc(sizeof (dmu_tx_hold_t), KM_PUSHPAGE);
+	txh = kmem_cache_alloc(dmu_tx_hold_cache, KM_PUSHPAGE);
 	txh->txh_tx = tx;
 	txh->txh_dnode = dn;
 #ifdef DEBUG_DMU_TX
@@ -1173,7 +1191,7 @@ dmu_tx_commit(dmu_tx_t *tx)
 		dnode_t *dn = txh->txh_dnode;
 
 		list_remove(&tx->tx_holds, txh);
-		kmem_free(txh, sizeof (dmu_tx_hold_t));
+		kmem_cache_free(dmu_tx_hold_cache, txh);
 		if (dn == NULL)
 			continue;
 		mutex_enter(&dn->dn_mtx);
@@ -1207,7 +1225,7 @@ dmu_tx_commit(dmu_tx_t *tx)
 	refcount_destroy_many(&tx->tx_space_freed,
 	    refcount_count(&tx->tx_space_freed));
 #endif
-	kmem_free(tx, sizeof (dmu_tx_t));
+	kmem_cache_free(dmu_tx_cache, tx);
 }
 
 void
@@ -1221,7 +1239,7 @@ dmu_tx_abort(dmu_tx_t *tx)
 		dnode_t *dn = txh->txh_dnode;
 
 		list_remove(&tx->tx_holds, txh);
-		kmem_free(txh, sizeof (dmu_tx_hold_t));
+		kmem_cache_free(dmu_tx_hold_cache, txh);
 		if (dn != NULL)
 			dnode_rele(dn, tx);
 	}
@@ -1240,7 +1258,7 @@ dmu_tx_abort(dmu_tx_t *tx)
 	refcount_destroy_many(&tx->tx_space_freed,
 	    refcount_count(&tx->tx_space_freed));
 #endif
-	kmem_free(tx, sizeof (dmu_tx_t));
+	kmem_cache_free(dmu_tx_cache, tx);
 }
 
 uint64_t
@@ -1255,7 +1273,7 @@ dmu_tx_callback_register(dmu_tx_t *tx, dmu_tx_callback_func_t *func, void *data)
 {
 	dmu_tx_callback_t *dcb;
 
-	dcb = kmem_alloc(sizeof (dmu_tx_callback_t), KM_PUSHPAGE);
+	dcb = kmem_cache_alloc(dmu_tx_cb_cache, KM_PUSHPAGE);
 
 	dcb->dcb_func = func;
 	dcb->dcb_data = data;
@@ -1274,7 +1292,7 @@ dmu_tx_do_callbacks(list_t *cb_list, int error)
 	while ((dcb = list_head(cb_list))) {
 		list_remove(cb_list, dcb);
 		dcb->dcb_func(dcb->dcb_data, error);
-		kmem_free(dcb, sizeof (dmu_tx_callback_t));
+		kmem_cache_free(dmu_tx_cb_cache, dcb);
 	}
 }
 
@@ -1431,6 +1449,13 @@ dmu_tx_hold_sa(dmu_tx_t *tx, sa_handle_t *hdl, boolean_t may_grow)
 void
 dmu_tx_init(void)
 {
+	dmu_tx_cache = kmem_cache_create("dmu_tx_t", sizeof (dmu_tx_t),
+		0, dmu_tx_cons, NULL, NULL, NULL, NULL, 0);
+	dmu_tx_hold_cache = kmem_cache_create("dmu_tx_hold_t", sizeof (dmu_tx_hold_t),
+		0, dmu_tx_hold_cons, NULL, NULL, NULL, NULL, 0);
+	dmu_tx_cb_cache = kmem_cache_create("dmu_tx_callback_t", sizeof (dmu_tx_callback_t),
+		0, NULL, NULL, NULL, NULL, NULL, 0);
+
 	dmu_tx_ksp = kstat_create("zfs", 0, "dmu_tx", "misc",
 	    KSTAT_TYPE_NAMED, sizeof (dmu_tx_stats) / sizeof (kstat_named_t),
 	    KSTAT_FLAG_VIRTUAL);
@@ -1448,6 +1473,10 @@ dmu_tx_fini(void)
 		kstat_delete(dmu_tx_ksp);
 		dmu_tx_ksp = NULL;
 	}
+
+	kmem_cache_destroy(dmu_tx_cb_cache);
+	kmem_cache_destroy(dmu_tx_hold_cache);
+	kmem_cache_destroy(dmu_tx_cache);
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
