@@ -3216,7 +3216,7 @@ vdev_deadman(vdev_t *vd)
 			/*
 			 * Look at the head of all the pending queues,
 			 * if any I/O has been outstanding for longer than
-			 * the spa_deadman_synctime we log a zevent.
+			 * the spa_deadman_synctime we panic the system.
 			 */
 			fio = avl_first(&vq->vq_pending_tree);
 			delta = ddi_get_lbolt64() - fio->io_timestamp;
@@ -3225,8 +3225,8 @@ vdev_deadman(vdev_t *vd)
 				    "delta %llu, last io %llu",
 				    fio->io_timestamp, delta,
 				    vq->vq_io_complete_ts);
-				zfs_ereport_post(FM_EREPORT_ZFS_DELAY,
-				    spa, vd, fio, 0, 0);
+				fm_panic("I/O to pool '%s' appears to be "
+					"hung.", spa_name(spa));
 			}
 		}
 		mutex_exit(&vq->vq_lock);

@@ -244,7 +244,7 @@ int spa_mode_global;
  * not completed in 1000 * zfs_txg_synctime_ms (i.e. 1000 seconds).
  * Secondly, the value determines if an I/O is considered "hung".
  * Any I/O that has not completed in zfs_deadman_synctime is considered
- * "hung" resulting in a zevent being posted.
+ * "hung" resulting in a system panic.
  * 1000 zfs_txg_synctime_ms (i.e. 1000 seconds).
  */
 unsigned long zfs_deadman_synctime = 1000ULL;
