@@ -25,6 +25,10 @@
  * LLNL-CODE-403049.
  */
 
+/* XXX: scsi/sg.h should include linux/types.h itself */
+#include <linux/types.h>
+#include <scsi/sg.h>
+
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
 #include <sys/vdev_disk.h>
@@ -49,6 +53,114 @@ typedef struct dio_request {
         struct bio		*dr_bio[0];	/* Attached bio's */
 } dio_request_t;
 
+typedef struct vdev_disk_db_entry
+{
+	char id[24];
+	int sector_size;
+} vdev_disk_db_entry_t;
+
+/* Database of block devices that lie with actual sector sizes.
+ * The identification string must be precisely 24 characters to avoid false
+ * negatives */
+static vdev_disk_db_entry_t vdev_bdev_database[] = {
+	{"ATA     Corsair Force 3 ", 8192},
+	{"ATA     INTEL SSDSA2CT04", 8192},
+	{"ATA     INTEL SSDSA2CW16", 8192},
+	{"ATA     INTEL SSDSC2CT18", 8192},
+	{"ATA     INTEL SSDSC2CW12", 8192},
+	{"ATA     KINGSTON SH100S3", 8192},
+	{"ATA     M4-CT064M4SSD2  ", 8192},
+	{"ATA     M4-CT128M4SSD2  ", 8192},
+	{"ATA     M4-CT256M4SSD2  ", 8192},
+	{"ATA     M4-CT512M4SSD2  ", 8192},
+	{"ATA     OCZ-AGILITY2    ", 8192},
+	{"ATA     OCZ-VERTEX2 3.5 ", 8192},
+	{"ATA     OCZ-VERTEX3     ", 8192},
+	{"ATA     OCZ-VERTEX3 LT  ", 8192},
+	{"ATA     OCZ-VERTEX3 MI  ", 8192},
+	{"ATA     SAMSUNG SSD 830 ", 8192},
+	{"ATA     Samsung SSD 840 ", 8192},
+	{"ATA     INTEL SSDSA2M040", 4096},
+	{"ATA     INTEL SSDSA2M080", 4096},
+	{"ATA     INTEL SSDSA2M160", 4096},
+	/* Imported from Open Solaris*/
+	{"ATA     MARVELL SD88SA02", 4096},
+	/* Advanced format Hard drives */
+	{"ATA     Hitachi HDS5C303", 4096},
+	{"ATA     SAMSUNG HD204UI ", 4096},
+	{"ATA     ST2000DL004 HD20", 4096},
+	{"ATA     WDC WD10EARS-00M", 4096},
+	{"ATA     WDC WD10EARS-00S", 4096},
+	{"ATA     WDC WD10EARS-00Z", 4096},
+	{"ATA     WDC WD15EARS-00M", 4096},
+	{"ATA     WDC WD15EARS-00S", 4096},
+	{"ATA     WDC WD15EARS-00Z", 4096},
+	{"ATA     WDC WD20EARS-00M", 4096},
+	{"ATA     WDC WD20EARS-00S", 4096},
+	{"ATA     WDC WD20EARS-00Z", 4096},
+	/* Virtual disks: Assume zvols with default volblocksize */
+#if 0
+	{"ATA     QEMU HARDDISK   ", 8192},
+	{"IET     VIRTUAL-DISK    ", 8192},
+	{"OI      COMSTAR         ", 8192},
+#endif
+};
+
+static const int vdev_bdev_database_size =
+	sizeof (vdev_bdev_database) / sizeof (vdev_bdev_database[0]);
+
+#define INQ_REPLY_LEN 96
+#define INQ_CMD_CODE 0x12
+#define INQ_CMD_LEN 6
+
+/*
+ * Check block device against database.
+ * Hits update sector_size and return B_TRUE.
+ * Misses do not touch sector_size and return B_FALSE.
+ */
+boolean_t
+vdev_bdev_database_check(struct block_device *bdev, int *sector_size)
+{
+	unsigned char inqBuff[INQ_REPLY_LEN];
+	unsigned char sense_buffer[32];
+	unsigned char inqCmdBlk[INQ_CMD_LEN] =
+		{INQ_CMD_CODE, 0, 0, 0, INQ_REPLY_LEN, 0};
+	sg_io_hdr_t io_hdr;
+	int i;
+
+	/* Prepare INQUIRY command */
+	memset(&io_hdr, 0, sizeof(sg_io_hdr_t));
+	io_hdr.interface_id = 'S';
+	io_hdr.cmd_len = sizeof(inqCmdBlk);
+	/* io_hdr.iovec_count = 0; */  /* memset takes care of this */
+	io_hdr.mx_sb_len = sizeof(sense_buffer);
+	io_hdr.dxfer_direction = SG_DXFER_FROM_DEV;
+	io_hdr.dxfer_len = INQ_REPLY_LEN;
+	io_hdr.dxferp = inqBuff;
+	io_hdr.cmdp = inqCmdBlk;
+	io_hdr.sbp = sense_buffer;
+	io_hdr.timeout = 10;        /* 10 milliseconds is ample time */
+	/* io_hdr.flags = 0; */     /* take defaults: indirect IO, etc */
+	/* io_hdr.pack_id = 0; */
+	/* io_hdr.usr_ptr = NULL; */
+
+	if (ioctl_by_bdev(bdev, SG_IO, (unsigned long) &io_hdr) < 0)
+		return B_FALSE;
+
+	if ((io_hdr.info & SG_INFO_OK_MASK) != SG_INFO_OK)
+		return B_FALSE;
+
+	for ( i = 0 ; i < vdev_bdev_database_size ; i++ ) {
+		if (memcmp(inqBuff + 8, vdev_bdev_database[i].id, 24))
+			continue;
+
+		*sector_size = vdev_bdev_database[i].sector_size;
+		return B_TRUE;
+	}
+
+	return B_FALSE;
+
+}
 
 #ifdef HAVE_OPEN_BDEV_EXCLUSIVE
 static fmode_t
@@ -293,8 +405,10 @@ vdev_disk_open(vdev_t *v, uint64_t *psize, uint64_t *max_psize,
 	vd->vd_bdev = bdev;
 
 skip_open:
+
 	/*  Determine the physical block size */
-	block_size = vdev_bdev_block_size(vd->vd_bdev);
+	if (vdev_bdev_database_check(vd->vd_bdev, &block_size) == B_FALSE)
+		block_size = vdev_bdev_block_size(vd->vd_bdev);
 
 	/* Clear the nowritecache bit, causes vdev_reopen() to try again. */
 	v->vdev_nowritecache = B_FALSE;
