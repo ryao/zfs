@@ -155,6 +155,12 @@ typedef enum arc_reclaim_strategy {
 	ARC_RECLAIM_CONS		/* Conservative reclaim strategy */
 } arc_reclaim_strategy_t;
 
+/*
+ * The number of iterations through arc_evict_*() before we
+ * drop & reacquire the lock.
+ */
+int arc_evict_iterations = 100;
+
 /* number of seconds before growing cache again */
 int zfs_arc_grow_retry = 5;
 
@@ -1143,7 +1149,7 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *ab, kmutex_t *hash_lock)
 	uint64_t from_delta, to_delta;
 
 	ASSERT(MUTEX_HELD(hash_lock));
-	ASSERT(new_state != old_state);
+	ASSERT3P(new_state, !=, old_state);
 	ASSERT(refcnt == 0 || ab->b_datacnt > 0);
 	ASSERT(ab->b_datacnt == 0 || !GHOST_STATE(new_state));
 	ASSERT(ab->b_datacnt <= 1 || old_state != arc_anon);
@@ -1883,6 +1889,7 @@ arc_evict_ghost(arc_state_t *state, uint64_t spa, int64_t bytes)
 	kmutex_t *hash_lock;
 	uint64_t bytes_deleted = 0;
 	uint64_t bufs_skipped = 0;
+	int count = 0;
 
 	ASSERT(GHOST_STATE(state));
 	bzero(&marker, sizeof(marker));
@@ -1890,6 +1897,8 @@ top:
 	mutex_enter(&state->arcs_mtx);
 	for (ab = list_tail(list); ab; ab = ab_prev) {
 		ab_prev = list_prev(list, ab);
+		if (ab->b_type > ARC_BUFC_NUMTYPES)
+			panic("invalid ab=%p", (void *)ab);
 		if (spa && ab->b_spa != spa)
 			continue;
 
@@ -1901,6 +1910,23 @@ top:
 		/* caller may be trying to modify this buffer, skip it */
 		if (MUTEX_HELD(hash_lock))
 			continue;
+
+		/*
+		 * It may take a long time to evict all the bufs requested.
+		 * To avoid blocking all arc activity, periodically drop
+		 * the arcs_mtx and give other threads a chance to run
+		 * before reacquiring the lock.
+		 */
+		if (count++ > arc_evict_iterations) {
+			list_insert_after(list, ab, &marker);
+			mutex_exit(&state->arcs_mtx);
+			kpreempt(KPREEMPT_SYNC);
+			mutex_enter(&state->arcs_mtx);
+			ab_prev = list_prev(list, &marker);
+			list_remove(list, &marker);
+			count = 0;
+			continue;
+		}
 		if (mutex_tryenter(hash_lock)) {
 			ASSERT(!HDR_IO_IN_PROGRESS(ab));
 			ASSERT(ab->b_buf == NULL);
@@ -1936,8 +1962,10 @@ top:
 			mutex_enter(&state->arcs_mtx);
 			ab_prev = list_prev(list, &marker);
 			list_remove(list, &marker);
-		} else
+		} else {
 			bufs_skipped += 1;
+		}
+
 	}
 	mutex_exit(&state->arcs_mtx);
 
@@ -3674,15 +3702,6 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	int error;
 	uint64_t anon_size;
 
-#ifdef ZFS_DEBUG
-	/*
-	 * Once in a while, fail for no reason.  Everything should cope.
-	 */
-	if (spa_get_random(10000) == 0) {
-		dprintf("forcing random failure\n");
-		return (ERESTART);
-	}
-#endif
 	if (reserve > arc_c/4 && !arc_no_grow)
 		arc_c = MIN(arc_c_max, reserve * 4);
 	if (reserve > arc_c) {
