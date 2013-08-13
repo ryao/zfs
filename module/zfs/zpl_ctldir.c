@@ -319,8 +319,10 @@ zpl_snapdir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 	cookie = ctx->pos;
 
 	while (error == 0) {
+		dsl_pool_config_enter(dmu_objset_pool(zsb->z_os), FTAG);
 		error = -dmu_snapshot_list_next(zsb->z_os, MAXNAMELEN,
 		    snapname, &id, &cookie, &case_conflict);
+		dsl_pool_config_exit(dmu_objset_pool(zsb->z_os), FTAG);
 		if (error)
 			goto out;
 
@@ -349,8 +351,10 @@ zpl_snapdir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		/* fall-thru */
 	default:
 		while (error == 0) {
+			dsl_pool_config_enter(dmu_objset_pool(zsb->z_os), FTAG);
 			error = -dmu_snapshot_list_next(zsb->z_os, MAXNAMELEN,
 			    snapname, &id, &cookie, &case_conflict);
+			dsl_pool_config_exit(dmu_objset_pool(zsb->z_os), FTAG);
 			if (error)
 				goto out;
 

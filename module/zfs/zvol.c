@@ -311,10 +311,18 @@ int
 zvol_set_volsize(const char *name, uint64_t volsize)
 {
 	zvol_state_t *zv;
-	dmu_object_info_t *doi;
-	objset_t *os = NULL;
-	uint64_t readonly;
+	objset_t *os;
 	int error;
+	dmu_object_info_t *doi;
+	uint64_t readonly;
+	boolean_t owned = B_FALSE;
+
+	error = dsl_prop_get_integer(name,
+	    zfs_prop_to_name(ZFS_PROP_READONLY), &readonly, NULL);
+	if (error != 0)
+		return (error);
+	if (readonly)
+		return (EROFS);
 
 	mutex_enter(&zvol_state_lock);
 
@@ -324,33 +332,41 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 		goto out;
 	}
 
+	if (get_disk_ro(zv->zv_disk) || (zv->zv_flags & ZVOL_RDONLY)) {
+		/* XXX: We should audit the code to ensure that we do not fall
+		 * out of sync with dsl_prop_get_integer()
+		 */
+		error = (EROFS);
+		goto out;
+	}
+
 	doi = kmem_alloc(sizeof(dmu_object_info_t), KM_SLEEP);
 
-	error = dmu_objset_hold(name, FTAG, &os);
-	if (error)
-		goto out_doi;
+	if (zv == NULL || zv->zv_objset == NULL) {
+		if ((error = dmu_objset_own(name, DMU_OST_ZVOL, B_FALSE,
+		    FTAG, &os)) != 0) {
+			goto out_doi;
+		}
+		owned = B_TRUE;
+		if (zv != NULL)
+			zv->zv_objset = os;
+	} else {
+		os = zv->zv_objset;
+	}
 
 	if ((error = dmu_object_info(os, ZVOL_OBJ, doi)) != 0 ||
 	    (error = zvol_check_volsize(volsize,doi->doi_data_block_size)) != 0)
 		goto out_doi;
 
-	VERIFY(dsl_prop_get_integer(name, "readonly", &readonly, NULL) == 0);
-	if (readonly) {
-		error = EROFS;
-		goto out_doi;
-	}
-
-	if (get_disk_ro(zv->zv_disk) || (zv->zv_flags & ZVOL_RDONLY)) {
-		error = EROFS;
-		goto out_doi;
-	}
-
 	error = zvol_update_volsize(zv, volsize, os);
 out_doi:
 	kmem_free(doi, sizeof(dmu_object_info_t));
 out:
-	if (os)
-		dmu_objset_rele(os, FTAG);
+	if (owned) {
+		dmu_objset_disown(os, FTAG);
+		if (zv != NULL)
+			zv->zv_objset = NULL;
+	}
 
 	mutex_exit(&zvol_state_lock);
 
@@ -981,7 +997,7 @@ zvol_last_close(zvol_state_t *zv)
 	if (dsl_dataset_is_dirty(dmu_objset_ds(zv->zv_objset)) &&
 	    !(zv->zv_flags & ZVOL_RDONLY))
 		txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
-	(void) dmu_objset_evict_dbufs(zv->zv_objset);
+	dmu_objset_evict_dbufs(zv->zv_objset);
 
 	dmu_objset_disown(zv->zv_objset, zvol_tag);
 	zv->zv_objset = NULL;
@@ -1485,9 +1501,6 @@ zvol_create_snapshots(objset_t *os, const char *name)
 	cookie = obj = 0;
 	sname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 
-	(void) dmu_objset_find(name, dmu_objset_prefetch, NULL,
-	    DS_FIND_SNAPSHOTS);
-
 	for (;;) {
 		len = snprintf(sname, MAXPATHLEN, "%s@", name);
 		if (len >= MAXPATHLEN) {
@@ -1496,8 +1509,10 @@ zvol_create_snapshots(objset_t *os, const char *name)
 			break;
 		}
 
+		dsl_pool_config_enter(dmu_objset_pool(os), FTAG);
 		error = dmu_snapshot_list_next(os, MAXPATHLEN - len,
 		    sname + len, &obj, &cookie, NULL);
+		dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 		if (error != 0) {
 			if (error == ENOENT)
 				error = 0;
@@ -1533,13 +1548,16 @@ zvol_create_minors(const char *name)
 		return (error);
 	}
 	if (dmu_objset_type(os) == DMU_OST_ZVOL) {
+		dsl_dataset_long_hold(os->os_dsl_dataset, FTAG);
+		dsl_pool_rele(dmu_objset_pool(os), FTAG);
 		if ((error = zvol_create_minor(name)) == 0)
 			error = zvol_create_snapshots(os, name);
 		else {
 			printk("ZFS WARNING: Unable to create ZVOL %s (error=%d).\n",
 			    name, error);
 		}
-		dmu_objset_rele(os, FTAG);
+		dsl_dataset_long_rele(os->os_dsl_dataset, FTAG);
+		dsl_dataset_rele(os->os_dsl_dataset, FTAG);
 		return (error);
 	}
 	if (dmu_objset_type(os) != DMU_OST_ZFS) {
@@ -1555,13 +1573,6 @@ zvol_create_minors(const char *name)
 	}
 	p = osname + strlen(osname);
 	len = MAXPATHLEN - (p - osname);
-
-	/* Prefetch the datasets. */
-	cookie = 0;
-	while (dmu_dir_list_next(os, len, p, NULL, &cookie) == 0) {
-		if (!dataset_name_hidden(osname))
-			(void) dmu_objset_prefetch(osname, NULL);
-	}
 
 	cookie = 0;
 	while (dmu_dir_list_next(os, MAXPATHLEN - (p - osname), p, NULL,
