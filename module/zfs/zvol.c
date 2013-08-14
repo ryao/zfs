@@ -1570,7 +1570,7 @@ snapdev_snapshot_changed_cb(const char *dsname, void *arg) {
 
 int
 zvol_set_snapdev(const char *dsname, uint64_t snapdev) {
-	(void) dmu_objset_find((char *) dsname, snapdev_snapshot_changed_cb,
+	(void) dmu_objset_find(dsname, snapdev_snapshot_changed_cb,
 		&snapdev, DS_FIND_SNAPSHOTS | DS_FIND_CHILDREN);
 	/* caller should continue to modify snapdev property */
 	return (-1);

@@ -1689,7 +1689,7 @@ findfunc(spa_t *spa, uint64_t dsobj, const char *dsname, void *arg)
  * Perhaps change all callers to use dmu_objset_find_spa()?
  */
 int
-dmu_objset_find(char *name, int func(const char *, void *), void *arg,
+dmu_objset_find(const char *name, int func(const char *, void *), void *arg,
     int flags)
 {
 	struct findarg fa;
