@@ -1473,48 +1473,111 @@ zvol_remove_minor(const char *name)
 	return (error);
 }
 
-static int
-zvol_create_minors_cb(spa_t *spa, uint64_t dsobj,
-		      const char *dsname, void *arg)
-{
-	if (strchr(dsname, '/') == NULL)
-		return 0;
+extern boolean_t dataset_name_hidden(const char *name);
 
-	(void) __zvol_create_minor(dsname, B_FALSE);
-	return (0);
+static int
+zvol_create_snapshots(objset_t *os, const char *name)
+{
+	uint64_t cookie, obj;
+	char *sname;
+	int error, len;
+
+	cookie = obj = 0;
+	sname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+
+	(void) dmu_objset_find(name, dmu_objset_prefetch, NULL,
+	    DS_FIND_SNAPSHOTS);
+
+	for (;;) {
+		len = snprintf(sname, MAXPATHLEN, "%s@", name);
+		if (len >= MAXPATHLEN) {
+			dmu_objset_rele(os, FTAG);
+			error = ENAMETOOLONG;
+			break;
+		}
+
+		error = dmu_snapshot_list_next(os, MAXPATHLEN - len,
+		    sname + len, &obj, &cookie, NULL);
+		if (error != 0) {
+			if (error == ENOENT)
+				error = 0;
+			break;
+		}
+
+		error = zvol_create_minor(sname);
+		if (error != 0 && error != ENODEV ) {
+			printk("ZFS WARNING: Unable to create ZVOL %s (error=%d).\n",
+			    sname, error);
+			break;
+		}
+	}
+
+	kmem_free(sname, MAXPATHLEN);
+	return (error);
 }
 
-/*
- * Create minors for specified pool, if pool is NULL create minors
- * for all available pools.
- */
 int
-zvol_create_minors(const char *pool)
+zvol_create_minors(const char *name)
 {
-	spa_t *spa = NULL;
-	int error = 0;
+	uint64_t cookie;
+	objset_t *os;
+	char *osname, *p;
+	int error, len;
 
-	if (zvol_inhibit_dev)
+	if (zvol_inhibit_dev || dataset_name_hidden(name))
 		return (0);
 
-	mutex_enter(&zvol_state_lock);
-	if (pool) {
-		error = dmu_objset_find_spa(NULL, pool, zvol_create_minors_cb,
-		    NULL, DS_FIND_CHILDREN | DS_FIND_SNAPSHOTS);
-	} else {
-		mutex_enter(&spa_namespace_lock);
-		while ((spa = spa_next(spa)) != NULL) {
-			error = dmu_objset_find_spa(NULL,
-			    spa_name(spa), zvol_create_minors_cb, NULL,
-			    DS_FIND_CHILDREN | DS_FIND_SNAPSHOTS);
-			if (error)
-				break;
-		}
-		mutex_exit(&spa_namespace_lock);
+	if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
+		printk("ZFS WARNING: Unable to put hold on %s (error=%d).\n",
+		    name, error);
+		return (error);
 	}
-	mutex_exit(&zvol_state_lock);
+	if (dmu_objset_type(os) == DMU_OST_ZVOL) {
+		if ((error = zvol_create_minor(name)) == 0)
+			error = zvol_create_snapshots(os, name);
+		else {
+			printk("ZFS WARNING: Unable to create ZVOL %s (error=%d).\n",
+			    name, error);
+		}
+		dmu_objset_rele(os, FTAG);
+		return (error);
+	}
+	if (dmu_objset_type(os) != DMU_OST_ZFS) {
+		dmu_objset_rele(os, FTAG);
+		return (0);
+	}
 
-	return error;
+	osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	if (snprintf(osname, MAXPATHLEN, "%s/", name) >= MAXPATHLEN) {
+		dmu_objset_rele(os, FTAG);
+		kmem_free(osname, MAXPATHLEN);
+		return (ENOENT);
+	}
+	p = osname + strlen(osname);
+	len = MAXPATHLEN - (p - osname);
+
+	/* Prefetch the datasets. */
+	cookie = 0;
+	while (dmu_dir_list_next(os, len, p, NULL, &cookie) == 0) {
+		if (!dataset_name_hidden(osname))
+			(void) dmu_objset_prefetch(osname, NULL);
+	}
+
+	cookie = 0;
+	while (dmu_dir_list_next(os, MAXPATHLEN - (p - osname), p, NULL,
+	    &cookie) == 0) {
+		dmu_objset_rele(os, FTAG);
+		(void)zvol_create_minors(osname);
+		if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
+			printk("ZFS WARNING: Unable to put hold on %s (error=%d).\n",
+			    name, error);
+			return (error);
+		}
+	}
+
+	dmu_objset_rele(os, FTAG);
+	kmem_free(osname, MAXPATHLEN);
+	return (0);
 }
 
 /*

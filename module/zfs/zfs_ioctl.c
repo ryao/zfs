@@ -2091,7 +2091,7 @@ zfs_ioc_objset_zplprops(zfs_cmd_t *zc)
 	return (err);
 }
 
-static boolean_t
+boolean_t
 dataset_name_hidden(const char *name)
 {
 	/*
