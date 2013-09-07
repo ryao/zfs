@@ -4,6 +4,7 @@ subdir-m += unicode
 subdir-m += zcommon
 subdir-m += zfs
 subdir-m += zpios
+subdir-m += zsgbuf
 
 INSTALL_MOD_DIR ?= extra
 

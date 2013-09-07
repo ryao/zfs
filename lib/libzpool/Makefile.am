@@ -99,7 +99,8 @@ libzpool_la_SOURCES = \
 	$(top_srcdir)/module/zfs/zio_compress.c \
 	$(top_srcdir)/module/zfs/zio_inject.c \
 	$(top_srcdir)/module/zfs/zle.c \
-	$(top_srcdir)/module/zfs/zrlock.c
+	$(top_srcdir)/module/zfs/zrlock.c \
+	$(top_srcdir)/module/zsgbuf/sgbuf.c
 
 libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libunicode/libunicode.la \

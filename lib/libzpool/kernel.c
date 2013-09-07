@@ -1134,6 +1134,8 @@ kernel_init(int mode)
 	thread_init();
 	system_taskq_init();
 
+	sgbuf_init();
+
 	spa_init(mode);
 
 	tsd_create(&rrw_tsd_key, rrw_tsd_destroy);
@@ -1143,6 +1145,8 @@ void
 kernel_fini(void)
 {
 	spa_fini();
+
+	sgbuf_fini();
 
 	system_taskq_fini();
 	thread_fini();
