@@ -67,7 +67,7 @@ sgbuf_t *sgbuf_zalloc(size_t size, int flags);
 void sgbuf_free(sgbuf_t *buf, size_t size);
 
 /* XXX: These will be removed */
-#define SGBUF_MAP_OFFSET(buf, offset, offtype) (((offtype *)sgbuf_map((buf))) + (offset))
+#define SGBUF_MAP_OFFSET(buf, offset, offtype) ((offtype *)sgbuf_map((buf)) + (offset))
 #define sgbuf_map_peek(buf) ((buf)->addr)
 void *sgbuf_map (sgbuf_t *buf);
 void sgbuf_unmap (sgbuf_t *buf);

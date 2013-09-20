@@ -136,6 +136,7 @@ zil_prt_rec_write(zilog_t *zilog, int txtype, lr_write_t *lr)
 		return;
 
 	if (lr->lr_common.lrc_reclen == sizeof (lr_write_t)) {
+		sgbuf_t *tmp;
 		(void) printf("%shas blkptr, %s\n", prefix,
 		    !BP_IS_HOLE(bp) &&
 		    bp->blk_birth >= spa_first_txg(zilog->zl_spa) ?
@@ -158,11 +159,16 @@ zil_prt_rec_write(zilog_t *zilog, int txtype, lr_write_t *lr)
 		    lr->lr_foid, ZB_ZIL_LEVEL,
 		    lr->lr_offset / BP_GET_LSIZE(bp));
 
+		tmp = sgbuf_alloc(BP_GET_LSIZE(bp), KM_SLEEP);
 		error = zio_wait(zio_read(NULL, zilog->zl_spa,
-		    bp, buf, 0, BP_GET_LSIZE(bp), NULL, NULL,
+		    bp, tmp, 0, BP_GET_LSIZE(bp), NULL, NULL,
 		    ZIO_PRIORITY_SYNC_READ, ZIO_FLAG_CANFAIL, &zb));
-		if (error)
+		if (error) {
+			sgbuf_free(tmp, BP_GET_LSIZE(bp));
 			return;
+		}
+		sgbuf_convert(buf, tmp, TO_VOIDP, 0, 0, BP_GET_LSIZE(bp));
+		sgbuf_free(tmp, BP_GET_LSIZE(bp));
 		data = buf;
 	} else {
 		data = (char *)(lr + 1);

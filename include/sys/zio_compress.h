@@ -81,10 +81,10 @@ extern int lz4_decompress_zfs(void *src, void *dst, size_t s_len, size_t d_len,
 /*
  * Compress and decompress data if necessary.
  */
-extern size_t zio_compress_data(enum zio_compress c, void *src, void *dst,
-    size_t s_len);
-extern int zio_decompress_data(enum zio_compress c, void *src, void *dst,
-    size_t s_len, size_t d_len);
+extern size_t zio_compress_data(enum zio_compress c, sgbuf_t *src, sgbuf_t *dst,
+    uint32_t src_offset, uint32_t dst_offset, size_t s_len);
+extern int zio_decompress_data(enum zio_compress c, sgbuf_t *src, sgbuf_t *dst,
+    uint32_t src_offset, uint32_t dst_offset, size_t s_len, size_t d_len);
 
 #ifdef	__cplusplus
 }

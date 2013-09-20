@@ -1183,18 +1183,19 @@ visit_indirect(spa_t *spa, const dnode_phys_t *dnp,
 		ASSERT(buf->b_data);
 
 		/* recursively visit blocks below this */
-		cbp = buf->b_data;
-		for (i = 0; i < epb; i++, cbp++) {
+		cbp = sgbuf_map(buf->b_data);
+		for (i = 0; i < epb; i++) {
 			zbookmark_phys_t czb;
 
 			SET_BOOKMARK(&czb, zb->zb_objset, zb->zb_object,
 			    zb->zb_level - 1,
 			    zb->zb_blkid * epb + i);
-			err = visit_indirect(spa, dnp, cbp, &czb);
+			err = visit_indirect(spa, dnp, &cbp[i], &czb);
 			if (err)
 				break;
-			fill += BP_GET_FILL(cbp);
+			fill += BP_GET_FILL(&cbp[i]);
 		}
+		sgbuf_unmap(buf->b_data);
 		if (!err)
 			ASSERT3U(fill, ==, BP_GET_FILL(bp));
 		(void) arc_buf_remove_ref(buf, &buf);
@@ -1355,10 +1356,11 @@ dump_bptree(objset_t *os, uint64_t obj, char *name)
 		return;
 
 	VERIFY3U(0, ==, dmu_bonus_hold(os, obj, FTAG, &db));
-	bt = (bptree_phys_t *) db->db_data.zio_buf;
+	bt = (bptree_phys_t *) sgbuf_map(db->db_data.zio_buf);
 	zdb_nicenum(bt->bt_bytes, bytes);
 	(void) printf("\n    %s: %llu datasets, %s\n",
 	    name, (unsigned long long)(bt->bt_end - bt->bt_begin), bytes);
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 
 	if (dump_opt['d'] < 5)
@@ -2028,7 +2030,7 @@ dump_config(spa_t *spa)
 	    spa->spa_config_object, FTAG, &db);
 
 	if (error == 0) {
-		nvsize = *(uint64_t *)db->db_data.zio_buf;
+		nvsize = sgbuf_getu64(db->db_data.zio_buf, 0);
 		dmu_buf_rele(db, FTAG);
 
 		(void) printf("\nMOS Configuration:\n");
@@ -2315,8 +2317,8 @@ zdb_blkptr_done(zio_t *zio)
 	zdb_cb_t *zcb = zio->io_private;
 	zbookmark_phys_t *zb = &zio->io_bookmark;
 
-	zio_data_buf_free(((char *)zio->io_data + zio->io_data_offset),
-			  zio->io_size);
+	ASSERT0(zio->io_data_offset);
+	zio_data_buf_free(zio->io_data, zio->io_size);
 
 	mutex_enter(&spa->spa_scrub_lock);
 	spa->spa_scrub_inflight--;
@@ -2379,7 +2381,7 @@ zdb_blkptr_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	if (!BP_IS_EMBEDDED(bp) &&
 	    (dump_opt['c'] > 1 || (dump_opt['c'] && is_metadata))) {
 		size_t size = BP_GET_PSIZE(bp);
-		void *data = zio_data_buf_alloc(size);
+		sgbuf_t *data = zio_data_buf_alloc(size);
 		int flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_SCRUB | ZIO_FLAG_RAW;
 
 		/* If it's an intent log block, failure is expected. */
@@ -3141,7 +3143,7 @@ zdb_read_block(char *thing, spa_t *spa)
 	uint64_t offset = 0, size = 0, psize = 0, lsize = 0, blkptr_offset = 0;
 	zio_t *zio;
 	vdev_t *vd;
-	void *pbuf, *lbuf, *buf;
+	sgbuf_t *pbuf, *lbuf, *buf;
 	char *s, *p, *dup, *vdev, *flagstr;
 	int i, error;
 
@@ -3212,8 +3214,8 @@ zdb_read_block(char *thing, spa_t *spa)
 	psize = size;
 	lsize = size;
 
-	pbuf = umem_alloc_aligned(SPA_MAXBLOCKSIZE, 512, UMEM_NOFAIL);
-	lbuf = umem_alloc(SPA_MAXBLOCKSIZE, UMEM_NOFAIL);
+	pbuf = sgbuf_alloc(SPA_MAXBLOCKSIZE, KM_SLEEP);
+	lbuf = sgbuf_alloc(SPA_MAXBLOCKSIZE, KM_SLEEP);
 
 	BP_ZERO(bp);
 
@@ -3268,25 +3270,25 @@ zdb_read_block(char *thing, spa_t *spa)
 		 * every decompress function at every inflated blocksize.
 		 */
 		enum zio_compress c;
-		void *pbuf2 = umem_alloc(SPA_MAXBLOCKSIZE, UMEM_NOFAIL);
-		void *lbuf2 = umem_alloc(SPA_MAXBLOCKSIZE, UMEM_NOFAIL);
+		sgbuf_t *pbuf2 = sgbuf_alloc(SPA_MAXBLOCKSIZE, KM_SLEEP);
+		sgbuf_t *lbuf2 = sgbuf_alloc(SPA_MAXBLOCKSIZE, KM_SLEEP);
 
-		bcopy(pbuf, pbuf2, psize);
+		sgbuf_bcopy(pbuf, pbuf2, 0, 0, psize);
 
-		VERIFY(random_get_pseudo_bytes((uint8_t *)pbuf + psize,
-		    SPA_MAXBLOCKSIZE - psize) == 0);
+		VERIFY(random_get_pseudo_bytes(SGBUF_MAP_OFFSET(pbuf, psize,
+		    uint8_t), SPA_MAXBLOCKSIZE - psize) == 0);
 
-		VERIFY(random_get_pseudo_bytes((uint8_t *)pbuf2 + psize,
-		    SPA_MAXBLOCKSIZE - psize) == 0);
+		VERIFY(random_get_pseudo_bytes(SGBUF_MAP_OFFSET(pbuf2, psize,
+		    uint8_t), SPA_MAXBLOCKSIZE - psize) == 0);
 
 		for (lsize = SPA_MAXBLOCKSIZE; lsize > psize;
 		    lsize -= SPA_MINBLOCKSIZE) {
 			for (c = 0; c < ZIO_COMPRESS_FUNCTIONS; c++) {
 				if (zio_decompress_data(c, pbuf, lbuf,
-				    psize, lsize) == 0 &&
+				    0, 0, psize, lsize) == 0 &&
 				    zio_decompress_data(c, pbuf2, lbuf2,
-				    psize, lsize) == 0 &&
-				    bcmp(lbuf, lbuf2, lsize) == 0)
+				    0, 0, psize, lsize) == 0 &&
+				    sgbuf_bcmp(lbuf, lbuf2, 0, 0, lsize) == 0)
 					break;
 			}
 			if (c != ZIO_COMPRESS_FUNCTIONS)
@@ -3294,8 +3296,8 @@ zdb_read_block(char *thing, spa_t *spa)
 			lsize -= SPA_MINBLOCKSIZE;
 		}
 
-		umem_free(pbuf2, SPA_MAXBLOCKSIZE);
-		umem_free(lbuf2, SPA_MAXBLOCKSIZE);
+		sgbuf_free(pbuf2, SPA_MAXBLOCKSIZE);
+		sgbuf_free(lbuf2, SPA_MAXBLOCKSIZE);
 
 		if (lsize <= psize) {
 			(void) printf("Decompress of %s failed\n", thing);
@@ -3309,21 +3311,21 @@ zdb_read_block(char *thing, spa_t *spa)
 	}
 
 	if (flags & ZDB_FLAG_PRINT_BLKPTR)
-		zdb_print_blkptr((blkptr_t *)(void *)
-		    ((uintptr_t)buf + (uintptr_t)blkptr_offset), flags);
+		zdb_print_blkptr((blkptr_t *)
+		    SGBUF_MAP_OFFSET(buf, blkptr_offset, uintptr_t), flags);
 	else if (flags & ZDB_FLAG_RAW)
-		zdb_dump_block_raw(buf, size, flags);
+		zdb_dump_block_raw(sgbuf_map(buf), size, flags);
 	else if (flags & ZDB_FLAG_INDIRECT)
-		zdb_dump_indirect((blkptr_t *)buf, size / sizeof (blkptr_t),
+		zdb_dump_indirect(sgbuf_map(buf), size / sizeof (blkptr_t),
 		    flags);
 	else if (flags & ZDB_FLAG_GBH)
-		zdb_dump_gbh(buf, flags);
+		zdb_dump_gbh(sgbuf_map(buf), flags);
 	else
-		zdb_dump_block(thing, buf, size, flags);
+		zdb_dump_block(thing, sgbuf_map(buf), size, flags);
 
 out:
-	umem_free(pbuf, SPA_MAXBLOCKSIZE);
-	umem_free(lbuf, SPA_MAXBLOCKSIZE);
+	sgbuf_free(pbuf, SPA_MAXBLOCKSIZE);
+	sgbuf_free(lbuf, SPA_MAXBLOCKSIZE);
 	free(dup);
 }
 

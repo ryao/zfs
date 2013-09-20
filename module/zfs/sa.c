@@ -361,8 +361,9 @@ sa_attr_op(sa_handle_t *hdl, sa_bulk_attr_t *bulk, int count,
 		if (hdl->sa_bonus_tab && TOC_ATTR_PRESENT(
 		    hdl->sa_bonus_tab->sa_idx_tab[bulk[i].sa_attr])) {
 			SA_ATTR_INFO(sa, hdl->sa_bonus_tab,
-			    SA_GET_HDR(hdl, SA_BONUS),
+			    ((sa_hdr_phys_t *)sgbuf_map(SA_GET_HDR(hdl, SA_BONUS))),
 			    bulk[i].sa_attr, bulk[i], SA_BONUS, hdl);
+			sgbuf_unmap(SA_GET_HDR(hdl, SA_BONUS));
 			if (tx && !(buftypes & SA_BONUS)) {
 				dmu_buf_will_dirty(hdl->sa_bonus, tx);
 				buftypes |= SA_BONUS;
@@ -373,8 +374,9 @@ sa_attr_op(sa_handle_t *hdl, sa_bulk_attr_t *bulk, int count,
 			if (TOC_ATTR_PRESENT(
 			    hdl->sa_spill_tab->sa_idx_tab[bulk[i].sa_attr])) {
 				SA_ATTR_INFO(sa, hdl->sa_spill_tab,
-				    SA_GET_HDR(hdl, SA_SPILL),
+				    ((sa_hdr_phys_t *)sgbuf_map(SA_GET_HDR(hdl, SA_SPILL))),
 				    bulk[i].sa_attr, bulk[i], SA_SPILL, hdl);
+				sgbuf_unmap(SA_GET_HDR(hdl, SA_SPILL));
 				if (tx && !(buftypes & SA_SPILL) &&
 				    bulk[i].sa_size == bulk[i].sa_length) {
 					dmu_buf_will_dirty(hdl->sa_spill, tx);
@@ -729,9 +731,9 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 	}
 
 	/* setup starting pointers to lay down data */
-	data_start = (void *)((uintptr_t)hdl->sa_bonus->db_data.zio_buf +
-	    hdrsize);
-	sahdr = (sa_hdr_phys_t *)hdl->sa_bonus->db_data.zio_buf;
+	/* XXX: unmap these later */
+	data_start = SGBUF_MAP_OFFSET(hdl->sa_bonus->db_data.zio_buf, hdrsize, uintptr_t);
+	sahdr = (sa_hdr_phys_t *)sgbuf_map(hdl->sa_bonus->db_data.zio_buf);
 	buftype = SA_BONUS;
 
 	if (spilling)
@@ -767,7 +769,11 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 			hash = -1ULL;
 			len_idx = 0;
 
-			sahdr = (sa_hdr_phys_t *)hdl->sa_spill->db_data.zio_buf;
+			/*
+			 * XXX: This needs to be unmapped. The naive way of
+			 * unmapping causes a null pointer dereference.
+			 */
+			sahdr = (sa_hdr_phys_t *)sgbuf_map(hdl->sa_spill->db_data.zio_buf);
 			sahdr->sa_magic = SA_MAGIC;
 			data_start = (void *)((uintptr_t)sahdr +
 			    spillhdrsize);
@@ -1246,7 +1252,7 @@ sa_byteswap_cb(void *hdr, void *attr_addr, sa_attr_type_t attr,
 void
 sa_byteswap(sa_handle_t *hdl, sa_buf_type_t buftype)
 {
-	sa_hdr_phys_t *sa_hdr_phys = SA_GET_HDR(hdl, buftype);
+	sa_hdr_phys_t *sa_hdr_phys = sgbuf_map(SA_GET_HDR(hdl, buftype));
 	dmu_buf_impl_t *db;
 	int num_lengths = 1;
 	int i;
@@ -1280,6 +1286,8 @@ sa_byteswap(sa_handle_t *hdl, sa_buf_type_t buftype)
 	sa_attr_iter(hdl->sa_os, sa_hdr_phys, DMU_OT_SA,
 	    sa_byteswap_cb, NULL, hdl);
 
+	sgbuf_unmap(SA_GET_HDR(hdl, buftype));
+
 	if (buftype == SA_SPILL)
 		arc_buf_freeze(((dmu_buf_impl_t *)hdl->sa_spill)->db_buf);
 }
@@ -1293,7 +1301,7 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	sa_os_t *sa = hdl->sa_os->os_sa;
 	sa_idx_tab_t *idx_tab;
 
-	sa_hdr_phys = SA_GET_HDR(hdl, buftype);
+	sa_hdr_phys = sgbuf_map(SA_GET_HDR(hdl, buftype));
 
 	mutex_enter(&sa->sa_lock);
 
@@ -1303,10 +1311,14 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	if (IS_SA_BONUSTYPE(bonustype) && sa_hdr_phys->sa_magic != SA_MAGIC &&
 	    sa_hdr_phys->sa_magic != 0) {
 		VERIFY(BSWAP_32(sa_hdr_phys->sa_magic) == SA_MAGIC);
+		sgbuf_unmap(SA_GET_HDR(hdl, buftype));
 		sa_byteswap(hdl, buftype);
+		sa_hdr_phys = sgbuf_map(SA_GET_HDR(hdl, buftype));
 	}
 
 	idx_tab = sa_find_idx_tab(hdl->sa_os, bonustype, sa_hdr_phys);
+
+	sgbuf_unmap(SA_GET_HDR(hdl, buftype));
 
 	if (buftype == SA_BONUS)
 		hdl->sa_bonus_tab = idx_tab;
@@ -1677,6 +1689,7 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 	int error;
 	uint16_t length;
 	int i, j, k, length_idx;
+	sgbuf_t *hdr_buf;
 	sa_hdr_phys_t *hdr;
 	sa_idx_tab_t *idx_tab;
 	int attr_count;
@@ -1691,8 +1704,8 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 	if (dn->dn_bonuslen != 0) {
 		bonus_data_size = hdl->sa_bonus->db_size;
 		old_data[0] = kmem_alloc(bonus_data_size, KM_SLEEP);
-		bcopy(hdl->sa_bonus->db_data.zio_buf, old_data[0],
-		    hdl->sa_bonus->db_size);
+		sgbuf_convert(old_data[0], hdl->sa_bonus->db_data.zio_buf,
+		    TO_VOIDP, 0, 0, hdl->sa_bonus->db_size);
 		bonus_attr_count = hdl->sa_bonus_tab->sa_layout->lot_attr_count;
 	} else {
 		old_data[0] = NULL;
@@ -1704,8 +1717,8 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 	if ((error = sa_get_spill(hdl)) == 0) {
 		ASSERT3U(hdl->sa_spill->db_size, <=, SPA_MAXBLOCKSIZE);
 		old_data[1] = sa_spill_alloc(KM_SLEEP);
-		bcopy(hdl->sa_spill->db_data.zio_buf, old_data[1],
-		    hdl->sa_spill->db_size);
+		sgbuf_convert(old_data[1], hdl->sa_spill->db_data.zio_buf,
+		TO_VOIDP, 0, 0, hdl->sa_spill->db_size);
 		spill_attr_count =
 		    hdl->sa_spill_tab->sa_layout->lot_attr_count;
 	} else if (error && error != ENOENT) {
@@ -1732,7 +1745,7 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 	 */
 	k = j = 0;
 	count = bonus_attr_count;
-	hdr = SA_GET_HDR(hdl, SA_BONUS);
+	hdr_buf = SA_GET_HDR(hdl, SA_BONUS);
 	idx_tab = SA_IDX_TAB_GET(hdl, SA_BONUS);
 	for (; k != 2; k++) {
 		/*
@@ -1757,8 +1770,11 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 				SA_ADD_BULK_ATTR(attr_desc, j, attr,
 				    locator, datastart, buflen);
 			} else {
-				if (length == 0)
+				if (length == 0) {
+					hdr = sgbuf_map(hdr_buf);
 					length = hdr->sa_lengths[length_idx++];
+					sgbuf_unmap(hdr_buf);
+				}
 
 				SA_ADD_BULK_ATTR(attr_desc, j, attr,
 				    NULL, (void *)
@@ -1767,7 +1783,7 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 			}
 		}
 		if (k == 0 && hdl->sa_spill) {
-			hdr = SA_GET_HDR(hdl, SA_SPILL);
+			hdr_buf = SA_GET_HDR(hdl, SA_SPILL);
 			idx_tab = SA_IDX_TAB_GET(hdl, SA_SPILL);
 			count = spill_attr_count;
 		} else {

@@ -44,7 +44,7 @@ typedef struct lwb {
 	boolean_t	lwb_fastwrite;	/* is blk marked for fastwrite? */
 	int		lwb_nused;	/* # used bytes in buffer */
 	int		lwb_sz;		/* size of block and buffer */
-	char		*lwb_buf;	/* log write buffer */
+	sgbuf_t		*lwb_buf;	/* log write buffer */
 	zio_t		*lwb_zio;	/* zio for this buffer */
 	dmu_tx_t	*lwb_tx;	/* tx for log block allocation */
 	uint64_t	lwb_max_txg;	/* highest txg in this lwb */

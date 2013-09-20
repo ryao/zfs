@@ -84,7 +84,7 @@ typedef const struct vdev_ops {
  * Virtual device properties
  */
 struct vdev_cache_entry {
-	char		*ve_data;
+	sgbuf_t		*ve_data;
 	uint64_t	ve_offset;
 	clock_t		ve_lastused;
 	avl_node_t	ve_offset_node;
@@ -123,7 +123,7 @@ struct vdev_queue {
 };
 
 struct vdev_io {
-	char		vi_buffer[SPA_MAXBLOCKSIZE]; /* Must be first */
+	sgbuf_t		*vi_buffer; /* Must be first */
 	list_node_t	vi_node;
 };
 

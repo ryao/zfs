@@ -76,10 +76,11 @@ zio_compress_select(enum zio_compress child, enum zio_compress parent)
 	return (child);
 }
 
+
 size_t
-zio_compress_data(enum zio_compress c, void *src, void *dst, size_t s_len)
+zio_compress_data(enum zio_compress c, sgbuf_t *src, sgbuf_t *dst,
+    uint32_t src_offset, uint32_t dst_offset, size_t s_len)
 {
-	uint64_t *word, *word_end;
 	size_t c_len, d_len;
 	zio_compress_info_t *ci = &zio_compress_table[c];
 
@@ -90,12 +91,7 @@ zio_compress_data(enum zio_compress c, void *src, void *dst, size_t s_len)
 	 * If the data is all zeroes, we don't even need to allocate
 	 * a block for it.  We indicate this by returning zero size.
 	 */
-	word_end = (uint64_t *)((char *)src + s_len);
-	for (word = src; word < word_end; word++)
-		if (*word != 0)
-			break;
-
-	if (word == word_end)
+	if (sgbuf_iszero(src, src_offset, s_len))
 		return (0);
 
 	if (c == ZIO_COMPRESS_EMPTY)
@@ -103,7 +99,14 @@ zio_compress_data(enum zio_compress c, void *src, void *dst, size_t s_len)
 
 	/* Compress at least 12.5% */
 	d_len = s_len - (s_len >> 3);
-	c_len = ci->ci_compress(src, dst, s_len, d_len, ci->ci_level);
+
+	/* XXX: Convert compression interface to use sgbufs directly */
+	c_len = ci->ci_compress(SGBUF_MAP_OFFSET(src, src_offset, char),
+	    SGBUF_MAP_OFFSET(dst, dst_offset, char), s_len, d_len,
+	    ci->ci_level);
+
+	sgbuf_unmap(src);
+	sgbuf_unmap(dst);
 
 	if (c_len > d_len)
 		return (s_len);
@@ -113,13 +116,22 @@ zio_compress_data(enum zio_compress c, void *src, void *dst, size_t s_len)
 }
 
 int
-zio_decompress_data(enum zio_compress c, void *src, void *dst,
-    size_t s_len, size_t d_len)
+zio_decompress_data(enum zio_compress c, sgbuf_t *src, sgbuf_t *dst,
+    uint32_t src_offset, uint32_t dst_offset, size_t s_len, size_t d_len)
 {
 	zio_compress_info_t *ci = &zio_compress_table[c];
+	int ret;
 
 	if ((uint_t)c >= ZIO_COMPRESS_FUNCTIONS || ci->ci_decompress == NULL)
 		return (SET_ERROR(EINVAL));
 
-	return (ci->ci_decompress(src, dst, s_len, d_len, ci->ci_level));
+	/* XXX: Convert compression interface to use sgbufs directly */
+	ret = ci->ci_decompress(SGBUF_MAP_OFFSET(src, src_offset, char),
+	    SGBUF_MAP_OFFSET(dst, dst_offset, char), s_len, d_len,
+	    ci->ci_level);
+
+	sgbuf_unmap(src);
+	sgbuf_unmap(dst);
+
+	return ret;
 }

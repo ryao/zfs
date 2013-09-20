@@ -69,8 +69,8 @@ dnode_increase_indirection(dnode_t *dn, dmu_tx_t *tx)
 		ASSERT(db->db.db_data.zio_buf);
 		ASSERT(arc_released(db->db_buf));
 		ASSERT3U(sizeof (blkptr_t) * nblkptr, <=, db->db.db_size);
-		bcopy(dn->dn_phys->dn_blkptr, db->db.db_data.zio_buf,
-		    sizeof (blkptr_t) * nblkptr);
+		sgbuf_convert(dn->dn_phys->dn_blkptr, db->db.db_data.zio_buf, TO_SGBUF,
+		    0, 0, sizeof (blkptr_t) * nblkptr);
 		arc_buf_freeze(db->db_buf);
 	}
 
@@ -97,9 +97,11 @@ dnode_increase_indirection(dnode_t *dn, dmu_tx_t *tx)
 
 		child->db_parent = db;
 		dbuf_add_ref(db, child);
+		/* XXX: When do we call sgbuf_unmap? */
 		if (db->db.db_data.zio_buf)
 			child->db_blkptr =
-			    (blkptr_t *)db->db.db_data.zio_buf + i;
+			    SGBUF_MAP_OFFSET(db->db.db_data.zio_buf, i,
+			    blkptr_t);
 		else
 			child->db_blkptr = NULL;
 		dprintf_dbuf_bp(child, child->db_blkptr,
@@ -204,7 +206,8 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 
 		/* data_old better be zeroed */
 		if (dr) {
-			buf = dr->dt.dl.dr_data.arc_buf->b_data;
+			/* XXX: Consider sgbuf_iszero() */
+			buf = sgbuf_map(dr->dt.dl.dr_data.arc_buf->b_data);
 			for (j = 0; j < child->db.db_size >> 3; j++) {
 				if (buf[j] != 0) {
 					panic("freed data not zero: "
@@ -212,6 +215,7 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 					    (void *)child, i, off, num);
 				}
 			}
+			sgbuf_unmap(dr->dt.dl.dr_data.arc_buf->b_data);
 		}
 
 		/*
@@ -219,7 +223,8 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 		 * future txg.
 		 */
 		mutex_enter(&child->db_mtx);
-		buf = (uint64_t *)child->db.db_data.zio_buf;
+		/* XXX: Consider sgbuf_iszero() */
+		buf = sgbuf_map(child->db.db_data.zio_buf);
 		if (buf != NULL && child->db_state != DB_FILL &&
 		    child->db_last_dirty == NULL) {
 			for (j = 0; j < child->db.db_size >> 3; j++) {
@@ -230,6 +235,10 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 				}
 			}
 		}
+
+		/* XXX: This might be a hack */
+		if (child->db.db_data.zio_buf)
+			sgbuf_unmap(child->db.db_data.zio_buf);
 		mutex_exit(&child->db_mtx);
 
 		dbuf_rele(child, FTAG);
@@ -258,7 +267,7 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 		(void) dbuf_read(db, NULL, DB_RF_MUST_SUCCEED);
 
 	dbuf_release_bp(db);
-	bp = (blkptr_t *) db->db.db_data.zio_buf;
+	bp = sgbuf_map(db->db.db_data.zio_buf);
 
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
@@ -297,14 +306,14 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 	}
 
 	/* If this whole block is free, free ourself too. */
-	bp = (blkptr_t *) db->db.db_data.zio_buf;
+	bp = sgbuf_map(db->db.db_data.zio_buf);
 	for (i = 0; i < 1 << epbs; i++) {
 		if (!BP_IS_HOLE(&bp[i]))
 			break;
 	}
 	if (i == 1 << epbs) {
 		/* didn't find any non-holes */
-		bzero(db->db.db_data.zio_buf, db->db.db_size);
+		sgbuf_bzero(db->db.db_data.zio_buf, 0, db->db.db_size);
 		free_blocks(dn, db->db_blkptr, 1, tx);
 	} else {
 		/*
@@ -314,6 +323,7 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 		ASSERT(db->db_dirtycnt > 0);
 	}
 
+	sgbuf_unmap(db->db.db_data.zio_buf);
 	DB_DNODE_EXIT(db);
 	arc_buf_freeze(db->db_buf);
 }
@@ -485,7 +495,7 @@ dnode_undirty_dbufs(list_t *list)
 		db->db_dirtycnt -= 1;
 		if (db->db_level == 0) {
 			ASSERT(db->db_blkid == DMU_BONUS_BLKID ||
-			    dr->dt.dl.dr_data.zio_buf == db->db_buf);
+			    dr->dt.dl.dr_data.arc_buf == db->db_buf);
 			dbuf_unoverride(dr);
 		}
 		kmem_free(dr, sizeof (dbuf_dirty_record_t));

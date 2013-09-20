@@ -133,7 +133,7 @@ typedef struct dbuf_dirty_record {
 			 */
 			union dr_data_buf {
 				arc_buf_t *arc_buf;
-				char *zio_buf;
+				sgbuf_t *zio_buf;
 				void *generic;
 			} dr_data;
 			blkptr_t dr_overridden_by;

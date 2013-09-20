@@ -99,7 +99,7 @@ spa_history_create_obj(spa_t *spa, dmu_tx_t *tx)
 	VERIFY(0 == dmu_bonus_hold(mos, spa->spa_history, FTAG, &dbp));
 	ASSERT(dbp->db_size >= sizeof (spa_history_phys_t));
 
-	shpp = (spa_history_phys_t *) dbp->db_data.zio_buf;
+	shpp = sgbuf_map(dbp->db_data.zio_buf);
 	dmu_buf_will_dirty(dbp, tx);
 
 	/*
@@ -111,6 +111,7 @@ spa_history_create_obj(spa_t *spa, dmu_tx_t *tx)
 	shpp->sh_phys_max_off = MIN(shpp->sh_phys_max_off, 1<<30);
 	shpp->sh_phys_max_off = MAX(shpp->sh_phys_max_off, 128<<10);
 
+	sgbuf_unmap(dbp->db_data.zio_buf);
 	dmu_buf_rele(dbp, FTAG);
 }
 
@@ -222,7 +223,7 @@ spa_history_log_sync(void *arg, dmu_tx_t *tx)
 	 * Update the offset when the write completes.
 	 */
 	VERIFY0(dmu_bonus_hold(mos, spa->spa_history, FTAG, &dbp));
-	shpp = (spa_history_phys_t *) dbp->db_data.zio_buf;
+	shpp = sgbuf_map(dbp->db_data.zio_buf);
 
 	dmu_buf_will_dirty(dbp, tx);
 
@@ -278,6 +279,7 @@ spa_history_log_sync(void *arg, dmu_tx_t *tx)
 
 	mutex_exit(&spa->spa_history_lock);
 	fnvlist_pack_free(record_packed, reclen);
+	sgbuf_unmap(dbp->db_data.zio_buf);
 	dmu_buf_rele(dbp, FTAG);
 	fnvlist_free(nvl);
 }
@@ -363,7 +365,7 @@ spa_history_get(spa_t *spa, uint64_t *offp, uint64_t *len, char *buf)
 
 	if ((err = dmu_bonus_hold(mos, spa->spa_history, FTAG, &dbp)) != 0)
 		return (err);
-	shpp = (spa_history_phys_t *) dbp->db_data.zio_buf;
+	shpp = sgbuf_map(dbp->db_data.zio_buf);
 
 #ifdef ZFS_DEBUG
 	{
@@ -426,6 +428,7 @@ spa_history_get(spa_t *spa, uint64_t *offp, uint64_t *len, char *buf)
 	}
 	mutex_exit(&spa->spa_history_lock);
 
+	sgbuf_unmap(dbp->db_data.zio_buf);
 	dmu_buf_rele(dbp, FTAG);
 	return (err);
 }

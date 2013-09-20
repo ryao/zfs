@@ -648,19 +648,21 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 			scn->scn_phys.scn_errors++;
 			return (err);
 		}
-		for (i = 0, cbp = buf->b_data; i < epb; i++, cbp++) {
-			dsl_scan_prefetch(scn, buf, cbp, zb->zb_objset,
+		cbp = sgbuf_map(buf->b_data);
+		for (i = 0; i < epb; i++) {
+			dsl_scan_prefetch(scn, buf, &cbp[i], zb->zb_objset,
 			    zb->zb_object, zb->zb_blkid * epb + i);
 		}
-		for (i = 0, cbp = buf->b_data; i < epb; i++, cbp++) {
+		for (i = 0; i < epb; i++) {
 			zbookmark_phys_t czb;
 
 			SET_BOOKMARK(&czb, zb->zb_objset, zb->zb_object,
 			    zb->zb_level - 1,
 			    zb->zb_blkid * epb + i);
-			dsl_scan_visitbp(cbp, &czb, dnp,
+			dsl_scan_visitbp(&cbp[i], &czb, dnp,
 			    ds, scn, ostype, tx);
 		}
+		sgbuf_unmap(buf->b_data);
 		(void) arc_buf_remove_ref(buf, &buf);
 	} else if (BP_GET_TYPE(bp) == DMU_OT_DNODE) {
 		uint32_t flags = ARC_WAIT;
@@ -675,18 +677,20 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 			scn->scn_phys.scn_errors++;
 			return (err);
 		}
-		for (i = 0, cdnp = buf->b_data; i < epb; i++, cdnp++) {
-			for (j = 0; j < cdnp->dn_nblkptr; j++) {
-				blkptr_t *cbp = &cdnp->dn_blkptr[j];
+		cdnp = sgbuf_map(buf->b_data);
+		for (i = 0; i < epb; i++) {
+			for (j = 0; j < cdnp[i].dn_nblkptr; j++) {
+				blkptr_t *cbp = &cdnp[i].dn_blkptr[j];
 				dsl_scan_prefetch(scn, buf, cbp,
 				    zb->zb_objset, zb->zb_blkid * epb + i, j);
 			}
 		}
-		for (i = 0, cdnp = buf->b_data; i < epb; i++, cdnp++) {
+		for (i = 0; i < epb; i++) {
 			dsl_scan_visitdnode(scn, ds, ostype,
-			    cdnp, zb->zb_blkid * epb + i, tx);
+			    &cdnp[i], zb->zb_blkid * epb + i, tx);
 		}
 
+		sgbuf_unmap(buf->b_data);
 		(void) arc_buf_remove_ref(buf, &buf);
 	} else if (BP_GET_TYPE(bp) == DMU_OT_OBJSET) {
 		uint32_t flags = ARC_WAIT;
@@ -700,7 +704,7 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 			return (err);
 		}
 
-		osp = buf->b_data;
+		osp = sgbuf_map(buf->b_data);
 
 		dsl_scan_visitdnode(scn, ds, osp->os_type,
 		    &osp->os_meta_dnode, DMU_META_DNODE_OBJECT, tx);
@@ -719,6 +723,7 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 			    &osp->os_userused_dnode,
 			    DMU_USERUSED_OBJECT, tx);
 		}
+		sgbuf_unmap(buf->b_data);
 		(void) arc_buf_remove_ref(buf, &buf);
 	}
 
@@ -1717,8 +1722,8 @@ dsl_scan_scrub_done(zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
 
-	zio_data_buf_free(((char *)zio->io_data + zio->io_data_offset),
-			  zio->io_size);
+	ASSERT0(zio->io_data_offset);
+	zio_data_buf_free(zio->io_data, zio->io_size);
 
 	mutex_enter(&spa->spa_scrub_lock);
 	spa->spa_scrub_inflight--;
@@ -1802,7 +1807,7 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 	if (needs_io && !zfs_no_scrub_io) {
 		vdev_t *rvd = spa->spa_root_vdev;
 		uint64_t maxinflight = rvd->vdev_children * zfs_top_maxinflight;
-		void *data = zio_data_buf_alloc(size);
+		sgbuf_t *data = zio_data_buf_alloc(size);
 
 		mutex_enter(&spa->spa_scrub_lock);
 		while (spa->spa_scrub_inflight >= maxinflight)

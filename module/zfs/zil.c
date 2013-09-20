@@ -235,7 +235,7 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 		cksum.zc_word[ZIL_ZC_SEQ]++;
 
 		if (BP_GET_CHECKSUM(bp) == ZIO_CHECKSUM_ZILOG2) {
-			zil_chain_t *zilc = abuf->b_data;
+			zil_chain_t *zilc = sgbuf_map(abuf->b_data);
 			char *lr = (char *)(zilc + 1);
 			uint64_t len = zilc->zc_nused - sizeof (zil_chain_t);
 
@@ -248,7 +248,7 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 				*nbp = zilc->zc_next_blk;
 			}
 		} else {
-			char *lr = abuf->b_data;
+			char *lr = sgbuf_map(abuf->b_data);
 			uint64_t size = BP_GET_LSIZE(bp);
 			zil_chain_t *zilc = (zil_chain_t *)(lr + size) - 1;
 
@@ -262,6 +262,7 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 				*nbp = zilc->zc_next_blk;
 			}
 		}
+		sgbuf_unmap(abuf->b_data);
 
 		VERIFY(arc_buf_remove_ref(abuf, &abuf));
 	}
@@ -299,7 +300,8 @@ zil_read_log_data(zilog_t *zilog, const lr_write_t *lr, void *wbuf)
 
 	if (error == 0) {
 		if (wbuf != NULL)
-			bcopy(abuf->b_data, wbuf, arc_buf_size(abuf));
+			sgbuf_convert(wbuf, abuf->b_data, TO_VOIDP, 0, 0,
+			    arc_buf_size(abuf));
 		(void) arc_buf_remove_ref(abuf, &abuf);
 	}
 
@@ -322,6 +324,7 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	uint64_t blk_count = 0;
 	uint64_t lr_count = 0;
 	blkptr_t blk, next_blk;
+	sgbuf_t *buf;
 	char *lrbuf, *lrp;
 	int error = 0;
 
@@ -342,7 +345,8 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	 * If the log has been claimed, stop if we encounter a sequence
 	 * number greater than the highest claimed sequence number.
 	 */
-	lrbuf = zio_buf_alloc(SPA_MAXBLOCKSIZE);
+	buf = zio_buf_alloc(SPA_MAXBLOCKSIZE);
+	lrbuf = sgbuf_map(buf);
 	zil_bp_tree_init(zilog);
 
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
@@ -389,7 +393,8 @@ done:
 	    (max_blk_seq == claim_blk_seq && max_lr_seq == claim_lr_seq));
 
 	zil_bp_tree_fini(zilog);
-	zio_buf_free(lrbuf, SPA_MAXBLOCKSIZE);
+	sgbuf_unmap(buf);
+	zio_buf_free(buf, SPA_MAXBLOCKSIZE);
 
 	return (error);
 }
@@ -978,10 +983,10 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	boolean_t use_slog;
 
 	if (BP_GET_CHECKSUM(&lwb->lwb_blk) == ZIO_CHECKSUM_ZILOG2) {
-		zilc = (zil_chain_t *)lwb->lwb_buf;
+		zilc = (zil_chain_t *)sgbuf_map(lwb->lwb_buf);
 		bp = &zilc->zc_next_blk;
 	} else {
-		zilc = (zil_chain_t *)(lwb->lwb_buf + lwb->lwb_sz);
+		zilc = (zil_chain_t *)(sgbuf_map(lwb->lwb_buf) + lwb->lwb_sz);
 		bp = &zilc->zc_next_blk;
 	}
 
@@ -1054,6 +1059,7 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 		/* Record the block for later vdev flushing */
 		zil_add_block(zilog, &lwb->lwb_blk);
 	}
+	sgbuf_unmap(lwb->lwb_buf);
 
 	if (BP_GET_CHECKSUM(&lwb->lwb_blk) == ZIO_CHECKSUM_ZILOG2) {
 		/* For Slim ZIL only write what is used. */
@@ -1072,7 +1078,7 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	/*
 	 * clear unused data for security
 	 */
-	bzero(lwb->lwb_buf + lwb->lwb_nused, wsz - lwb->lwb_nused);
+	sgbuf_bzero(lwb->lwb_buf, lwb->lwb_nused, wsz - lwb->lwb_nused);
 
 	zio_nowait(lwb->lwb_zio); /* Kick off the write for the old log block */
 
@@ -1123,8 +1129,9 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 		}
 	}
 
-	lr_buf = lwb->lwb_buf + lwb->lwb_nused;
-	bcopy(lrc, lr_buf, reclen);
+	/* XXX: Modify lrc to contain a sgbuf and an offset */
+	sgbuf_convert(lrc, lwb->lwb_buf, TO_SGBUF, 0, lwb->lwb_nused, reclen);
+	lr_buf = SGBUF_MAP_OFFSET(lwb->lwb_buf, lwb->lwb_nused, char);
 	lrc = (lr_t *)lr_buf;
 	lrw = (lr_write_t *)lrc;
 
@@ -1157,6 +1164,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 				ZIL_STAT_INCR(zil_itx_indirect_bytes,
 				    lrw->lr_length);
 			}
+			/* XXX Modify things to accept a sgbuf offset */
 			error = zilog->zl_get_data(
 			    itx->itx_private, lrw, dbuf, lwb->lwb_zio);
 			if (error == EIO) {
@@ -1166,7 +1174,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 			if (error != 0) {
 				ASSERT(error == ENOENT || error == EEXIST ||
 				    error == EALREADY);
-				return (lwb);
+				goto out;
 			}
 		}
 	}
@@ -1183,6 +1191,8 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	ASSERT3U(lwb->lwb_nused, <=, lwb->lwb_sz);
 	ASSERT0(P2PHASE(lwb->lwb_nused, sizeof (uint64_t)));
 
+out:
+	sgbuf_unmap(lwb->lwb_buf);
 	return (lwb);
 }
 

@@ -138,7 +138,7 @@ diff_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		    &aflags, zb) != 0)
 			return (SET_ERROR(EIO));
 
-		blk = abuf->b_data;
+		blk = sgbuf_map(abuf->b_data);
 		for (i = 0; i < blksz >> DNODE_SHIFT; i++) {
 			uint64_t dnobj = (zb->zb_blkid <<
 			    (DNODE_BLOCK_SHIFT - DNODE_SHIFT)) + i;
@@ -146,6 +146,7 @@ diff_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 			if (err)
 				break;
 		}
+		sgbuf_unmap(abuf->b_data);
 		(void) arc_buf_remove_ref(abuf, &abuf);
 		if (err)
 			return (err);

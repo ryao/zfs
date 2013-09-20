@@ -712,9 +712,11 @@ vdev_disk_io_start(zio_t *zio)
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
+	/* XXX: Rewrite this to stop mapping pages */
 	error = __vdev_disk_physio(vd->vd_bdev, zio,
-				   ((char *)zio->io_data + zio->io_data_offset),
+	    SGBUF_MAP_OFFSET(zio->io_data, zio->io_data_offset, char),
 	    zio->io_size, zio->io_offset, flags);
+	sgbuf_unmap(zio->io_data);
 	if (error) {
 		zio->io_error = error;
 		return (ZIO_PIPELINE_CONTINUE);

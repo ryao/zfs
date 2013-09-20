@@ -55,6 +55,7 @@ int space_map_blksz = (1 << 12);
 int
 space_map_load(space_map_t *sm, range_tree_t *rt, maptype_t maptype)
 {
+	sgbuf_t *buf;
 	uint64_t *entry, *entry_map, *entry_map_end;
 	uint64_t bufsize, size, offset, end, space;
 	int error = 0;
@@ -72,7 +73,8 @@ space_map_load(space_map_t *sm, range_tree_t *rt, maptype_t maptype)
 	}
 
 	bufsize = MAX(sm->sm_blksz, SPA_MINBLOCKSIZE);
-	entry_map = zio_buf_alloc(bufsize);
+	buf = zio_buf_alloc(bufsize);
+	entry_map = sgbuf_map(buf);
 
 	mutex_exit(sm->sm_lock);
 	if (end > bufsize) {
@@ -91,8 +93,8 @@ space_map_load(space_map_t *sm, range_tree_t *rt, maptype_t maptype)
 		    space_map_object(sm), offset, size);
 
 		mutex_exit(sm->sm_lock);
-		error = dmu_read(sm->sm_os, space_map_object(sm), offset, size,
-		    entry_map, DMU_READ_PREFETCH);
+		error = dmu_read_sgbuf(sm->sm_os, space_map_object(sm), offset, size,
+		    buf, DMU_READ_PREFETCH);
 		mutex_enter(sm->sm_lock);
 		if (error != 0)
 			break;
@@ -128,7 +130,9 @@ space_map_load(space_map_t *sm, range_tree_t *rt, maptype_t maptype)
 	else
 		range_tree_vacate(rt, NULL, NULL);
 
-	zio_buf_free(entry_map, bufsize);
+	sgbuf_unmap(buf);
+	zio_buf_free(buf, bufsize);
+
 	return (error);
 }
 
@@ -244,6 +248,7 @@ space_map_write(space_map_t *sm, range_tree_t *rt, maptype_t maptype,
 	spa_t *spa = dmu_objset_spa(os);
 	avl_tree_t *t = &rt->rt_root;
 	range_seg_t *rs;
+	sgbuf_t *buf;
 	uint64_t size, total, rt_space, nodes;
 	uint64_t *entry, *entry_map, *entry_map_end;
 	uint64_t expected_entries, actual_entries = 1;
@@ -272,7 +277,8 @@ space_map_write(space_map_t *sm, range_tree_t *rt, maptype_t maptype,
 
 	expected_entries = space_map_entries(sm, rt);
 
-	entry_map = zio_buf_alloc(sm->sm_blksz);
+	buf = zio_buf_alloc(sm->sm_blksz);
+	entry_map = sgbuf_map(buf);
 	entry_map_end = entry_map + (sm->sm_blksz / sizeof (uint64_t));
 	entry = entry_map;
 
@@ -299,9 +305,9 @@ space_map_write(space_map_t *sm, range_tree_t *rt, maptype_t maptype,
 
 			if (entry == entry_map_end) {
 				mutex_exit(rt->rt_lock);
-				dmu_write(os, space_map_object(sm),
+				dmu_write_sgbuf(os, space_map_object(sm),
 				    sm->sm_phys->smp_objsize, sm->sm_blksz,
-				    entry_map, tx);
+				    buf, tx);
 				mutex_enter(rt->rt_lock);
 				sm->sm_phys->smp_objsize += sm->sm_blksz;
 				entry = entry_map;
@@ -320,8 +326,8 @@ space_map_write(space_map_t *sm, range_tree_t *rt, maptype_t maptype,
 	if (entry != entry_map) {
 		size = (entry - entry_map) * sizeof (uint64_t);
 		mutex_exit(rt->rt_lock);
-		dmu_write(os, space_map_object(sm), sm->sm_phys->smp_objsize,
-		    size, entry_map, tx);
+		dmu_write_sgbuf(os, space_map_object(sm), sm->sm_phys->smp_objsize,
+		    size, buf, tx);
 		mutex_enter(rt->rt_lock);
 		sm->sm_phys->smp_objsize += size;
 	}
@@ -335,7 +341,8 @@ space_map_write(space_map_t *sm, range_tree_t *rt, maptype_t maptype,
 	VERIFY3U(range_tree_space(rt), ==, rt_space);
 	VERIFY3U(range_tree_space(rt), ==, total);
 
-	zio_buf_free(entry_map, sm->sm_blksz);
+	sgbuf_unmap(buf);
+	zio_buf_free(buf, sm->sm_blksz);
 }
 
 static int
@@ -349,7 +356,7 @@ space_map_open_impl(space_map_t *sm)
 		return (error);
 
 	dmu_object_size_from_db(sm->sm_dbuf, &sm->sm_blksz, &blocks);
-	sm->sm_phys = (space_map_phys_t *) sm->sm_dbuf->db_data.zio_buf;
+	sm->sm_phys = sgbuf_map(sm->sm_dbuf->db_data.zio_buf);
 	return (0);
 }
 
@@ -395,8 +402,10 @@ space_map_close(space_map_t *sm)
 	if (sm == NULL)
 		return;
 
-	if (sm->sm_dbuf != NULL)
+	if (sm->sm_dbuf != NULL) {
+		sgbuf_unmap(sm->sm_dbuf->db_data.zio_buf);
 		dmu_buf_rele(sm->sm_dbuf, sm);
+	}
 	sm->sm_dbuf = NULL;
 	sm->sm_phys = NULL;
 
@@ -431,6 +440,7 @@ space_map_truncate(space_map_t *sm, dmu_tx_t *tx)
 		    spa_name(spa), doi.doi_bonus_size, doi.doi_data_block_size);
 
 		space_map_free(sm, tx);
+		sgbuf_unmap(sm->sm_dbuf->db_data.zio_buf);
 		dmu_buf_rele(sm->sm_dbuf, sm);
 
 		sm->sm_object = space_map_alloc(sm->sm_os, tx);
@@ -443,7 +453,8 @@ space_map_truncate(space_map_t *sm, dmu_tx_t *tx)
 		 * will be reset.  Do the same in the common case so that
 		 * bugs related to the uncommon case do not go unnoticed.
 		 */
-		bzero(sm->sm_phys->smp_histogram,
+		sgbuf_bzero(sm->sm_dbuf->db_data.zio_buf,
+		    offsetof(space_map_phys_t, smp_histogram),
 		    sizeof (sm->sm_phys->smp_histogram));
 	}
 

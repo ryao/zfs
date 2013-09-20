@@ -717,8 +717,8 @@ zfs_write(struct inode *ip, uio_t *uio, int ioflag, cred_t *cr)
 			aiov = &iovp[i_iov];
 			abuf = dmu_xuio_arcbuf(xuio, i_iov);
 			dmu_xuio_clear(xuio, i_iov);
-			ASSERT((aiov->iov_base == abuf->b_data) ||
-			    ((char *)aiov->iov_base - (char *)abuf->b_data +
+			ASSERT((aiov->iov_base == sgbuf_map_peek(abuf->b_data)) ||
+			    ((char *)aiov->iov_base - (char *)sgbuf_map_peek(abuf->b_data) +
 			    aiov->iov_len == arc_buf_size(abuf)));
 			i_iov++;
 		} else if (abuf == NULL && n >= max_blksz &&
@@ -738,11 +738,17 @@ zfs_write(struct inode *ip, uio_t *uio, int ioflag, cred_t *cr)
 			    max_blksz);
 			ASSERT(abuf != NULL);
 			ASSERT(arc_buf_size(abuf) == max_blksz);
-			if ((error = uiocopy(abuf->b_data, max_blksz,
+			/*
+			 * XXX: This method of mapping is probably wrong.
+			 * Refactor after ztest actually works.
+			 */
+			if ((error = uiocopy(sgbuf_map(abuf->b_data), max_blksz,
 			    UIO_WRITE, uio, &cbytes))) {
+				sgbuf_unmap(abuf->b_data);
 				dmu_return_arcbuf(abuf);
 				break;
 			}
+			sgbuf_unmap(abuf->b_data);
 			ASSERT(cbytes == max_blksz);
 		}
 
@@ -801,7 +807,7 @@ zfs_write(struct inode *ip, uio_t *uio, int ioflag, cred_t *cr)
 			 * write via dmu_write().
 			 */
 			if (tx_bytes < max_blksz && (!write_eof ||
-			    aiov->iov_base != abuf->b_data)) {
+			    aiov->iov_base != sgbuf_map_peek(abuf->b_data))) {
 				ASSERT(xuio);
 				dmu_write(zsb->z_os, zp->z_id, woff,
 				    aiov->iov_len, aiov->iov_base, tx);

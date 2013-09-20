@@ -747,13 +747,13 @@ dmu_free_range(objset_t *os, uint64_t object, uint64_t offset,
 	return (0);
 }
 
-int
-dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
-    void *buf, uint32_t flags)
+static inline int
+dmu_read_generic(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    void *buf, uint32_t flags, sgbuf_convert_t ctype)
 {
 	dnode_t *dn;
 	dmu_buf_t **dbp;
-	int numbufs, err;
+	int numbufs, err, copied = 0;
 
 	err = dnode_hold(os, object, FTAG, &dn);
 	if (err)
@@ -767,7 +767,10 @@ dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	if (dn->dn_maxblkid == 0) {
 		int newsz = offset > dn->dn_datablksz ? 0 :
 		    MIN(size, dn->dn_datablksz - offset);
-		bzero((char *)buf + newsz, size - newsz);
+		if (ctype)
+			bzero(buf + newsz, size - newsz);
+		else
+			sgbuf_bzero(buf, newsz, size - newsz);
 		size = newsz;
 	}
 
@@ -794,11 +797,20 @@ dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 			bufoff = offset - db->db_offset;
 			tocpy = (int)MIN(db->db_size - bufoff, size);
 
-			bcopy(db->db_data.zio_buf + bufoff, buf, tocpy);
+			switch (ctype) {
+			case TO_SGBUF:
+				sgbuf_bcopy(db->db_data.zio_buf, buf, bufoff, copied,
+				    tocpy);
+				break;
+			case TO_VOIDP:
+				sgbuf_convert(buf, db->db_data.zio_buf,
+				    TO_VOIDP, copied, bufoff, tocpy);
+				break;
+			}
 
 			offset += tocpy;
 			size -= tocpy;
-			buf = (char *)buf + tocpy;
+			copied += tocpy;
 		}
 		dmu_buf_rele_array(dbp, numbufs, FTAG);
 	}
@@ -806,12 +818,28 @@ dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	return (err);
 }
 
-void
-dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
-    const void *buf, dmu_tx_t *tx)
+int
+dmu_read_sgbuf(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    sgbuf_t *buf, uint32_t flags)
+{
+	return dmu_read_generic(os, object, offset, size, buf, flags,
+	    TO_SGBUF);
+}
+
+int
+dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    void *buf, uint32_t flags)
+{
+	return dmu_read_generic(os, object, offset, size, buf, flags,
+	    TO_VOIDP);
+}
+
+static inline void
+dmu_write_generic(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    const void *buf, dmu_tx_t *tx, sgbuf_convert_t ctype)
 {
 	dmu_buf_t **dbp;
-	int numbufs, i;
+	int numbufs, i, copied = 0;
 
 	if (size == 0)
 		return;
@@ -836,16 +864,39 @@ dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 		else
 			dmu_buf_will_dirty(db, tx);
 
-		(void) memcpy(db->db_data.zio_buf + bufoff, buf, tocpy);
+		switch (ctype) {
+		case TO_SGBUF:
+			sgbuf_bcopy(buf, db->db_data.zio_buf, copied, bufoff,
+			    tocpy);
+			break;
+		case TO_VOIDP:
+			sgbuf_convert((void *)buf, db->db_data.zio_buf,
+			    TO_SGBUF, copied, bufoff, tocpy);
+			break;
+		}
 
 		if (tocpy == db->db_size)
 			dmu_buf_fill_done(db, tx);
 
 		offset += tocpy;
 		size -= tocpy;
-		buf = (char *)buf + tocpy;
+		copied += tocpy;
 	}
 	dmu_buf_rele_array(dbp, numbufs, FTAG);
+}
+
+void
+dmu_write_sgbuf(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    const sgbuf_t *buf, dmu_tx_t *tx)
+{
+	dmu_write_generic(os, object, offset, size, buf, tx, TO_SGBUF);
+}
+
+void
+dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    const void *buf, dmu_tx_t *tx)
+{
+	dmu_write_generic(os, object, offset, size, buf, tx, TO_VOIDP);
 }
 
 void
@@ -972,7 +1023,7 @@ dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 	ASSERT(i < priv->cnt);
 	ASSERT(off + n <= arc_buf_size(abuf));
 	iov = uio->uio_iov + i;
-	iov->iov_base = (char *)abuf->b_data + off;
+	iov->iov_base = SGBUF_MAP_OFFSET(abuf->b_data, off, char);
 	iov->iov_len = n;
 	priv->bufs[i] = abuf;
 	return (0);
@@ -1000,6 +1051,7 @@ dmu_xuio_clear(xuio_t *xuio, int i)
 	dmu_xuio_t *priv = XUIO_XUZC_PRIV(xuio);
 
 	ASSERT(i < priv->cnt);
+	sgbuf_unmap(priv->bufs[i]->b_data);
 	priv->bufs[i] = NULL;
 }
 
@@ -1119,8 +1171,9 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 		if (tocpy == 0)
 			break;
 
-		didcpy = dmu_req_copy(db->db_data.zio_buf + bufoff, tocpy, req,
-		    req_offset);
+		didcpy = dmu_req_copy(SGBUF_MAP_OFFSET(db->db_data.zio_buf, bufoff, char), tocpy,
+		    req, req_offset);
+		sgbuf_unmap(db->db_data.zio_buf);
 
 		if (didcpy < tocpy)
 			err = EIO;
@@ -1174,8 +1227,9 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 		else
 			dmu_buf_will_dirty(db, tx);
 
-		didcpy = dmu_req_copy(db_data.zio_buf + bufoff, tocpy, req,
-		    req_offset);
+		didcpy = dmu_req_copy(SGBUF_MAP_OFFSET(db->db_data.zio_buf, bufoff, char), tocpy,
+		    req, req_offset);
+		sgbuf_unmap(db->db_data.zio_buf);
 
 		if (tocpy == db->db_size)
 			dmu_buf_fill_done(db, tx);
@@ -1237,8 +1291,9 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 			else
 				XUIOSTAT_BUMP(xuiostat_rbuf_copied);
 		} else {
-			err = uiomove(db_data.zio_buf + bufoff, tocpy,
-			    UIO_READ, uio);
+			err = uiomove(SGBUF_MAP_OFFSET(db->db_data.zio_buf, bufoff, char),
+			    tocpy, UIO_READ, uio);
+			sgbuf_unmap(db->db_data.zio_buf);
 		}
 		if (err)
 			break;
@@ -1286,8 +1341,9 @@ dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 		 * to lock the pages in memory, so that uiomove won't
 		 * block.
 		 */
-		err = uiomove(db->db_data.zio_buf + bufoff, tocpy,
-		    UIO_WRITE, uio);
+		err = uiomove(SGBUF_MAP_OFFSET(db->db_data.zio_buf, bufoff, char),
+		    tocpy, UIO_WRITE, uio);
+		sgbuf_unmap(db->db_data.zio_buf);
 
 		if (tocpy == db->db_size)
 			dmu_buf_fill_done(db, tx);
@@ -1408,7 +1464,7 @@ dmu_assign_arcbuf(dmu_buf_t *handle, uint64_t offset, arc_buf_t *buf,
 		DB_DNODE_EXIT(dbuf);
 
 		dbuf_rele(db, FTAG);
-		dmu_write(os, object, offset, blksz, buf->b_data, tx);
+		dmu_write_sgbuf(os, object, offset, blksz, buf->b_data, tx);
 		dmu_return_arcbuf(buf);
 		XUIOSTAT_BUMP(xuiostat_wbuf_copied);
 	}
@@ -1678,7 +1734,7 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	dsa->dsa_tx = NULL;
 
 	zio_nowait(arc_write(pio, os->os_spa, txg,
-	    bp, (void *)dr->dt.dl.dr_data.zio_buf, DBUF_IS_L2CACHEABLE(db),
+	    bp, dr->dt.dl.dr_data.arc_buf, DBUF_IS_L2CACHEABLE(db),
 	    DBUF_IS_L2COMPRESSIBLE(db), &zp, dmu_sync_ready,
 	    NULL, dmu_sync_done, dsa, ZIO_PRIORITY_SYNC_WRITE,
 	    ZIO_FLAG_CANFAIL, &zb));

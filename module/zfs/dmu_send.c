@@ -200,7 +200,7 @@ dump_free(dmu_sendarg_t *dsp, uint64_t object, uint64_t offset,
 
 static int
 dump_write(dmu_sendarg_t *dsp, dmu_object_type_t type,
-    uint64_t object, uint64_t offset, int blksz, const blkptr_t *bp, void *data)
+    uint64_t object, uint64_t offset, int blksz, const blkptr_t *bp, sgbuf_t *data)
 {
 	struct drr_write *drrw = &(dsp->dsa_drr->drr_u.drr_write);
 
@@ -253,8 +253,11 @@ dump_write(dmu_sendarg_t *dsp, dmu_object_type_t type,
 
 	if (dump_bytes(dsp, dsp->dsa_drr, sizeof (dmu_replay_record_t)) != 0)
 		return (SET_ERROR(EINTR));
-	if (dump_bytes(dsp, data, blksz) != 0)
+	if (dump_bytes(dsp, sgbuf_map(data), blksz)) {
+		sgbuf_unmap(data);
 		return (SET_ERROR(EINTR));
+	}
+	sgbuf_unmap(data);
 	return (0);
 }
 
@@ -296,7 +299,7 @@ dump_write_embedded(dmu_sendarg_t *dsp, uint64_t object, uint64_t offset,
 }
 
 static int
-dump_spill(dmu_sendarg_t *dsp, uint64_t object, int blksz, void *data)
+dump_spill(dmu_sendarg_t *dsp, uint64_t object, int blksz, sgbuf_t *data)
 {
 	struct drr_spill *drrs = &(dsp->dsa_drr->drr_u.drr_spill);
 
@@ -316,8 +319,11 @@ dump_spill(dmu_sendarg_t *dsp, uint64_t object, int blksz, void *data)
 
 	if (dump_bytes(dsp, dsp->dsa_drr, sizeof (dmu_replay_record_t)))
 		return (SET_ERROR(EINTR));
-	if (dump_bytes(dsp, data, blksz))
+	if (dump_bytes(dsp, sgbuf_map(data), blksz)) {
+		sgbuf_unmap(data);
 		return (SET_ERROR(EINTR));
+	}
+	sgbuf_unmap(data);
 	return (0);
 }
 
@@ -489,7 +495,7 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		    &aflags, zb) != 0)
 			return (SET_ERROR(EIO));
 
-		blk = abuf->b_data;
+		blk = sgbuf_map(abuf->b_data);
 		for (i = 0; i < blksz >> DNODE_SHIFT; i++) {
 			uint64_t dnobj = (zb->zb_blkid <<
 			    (DNODE_BLOCK_SHIFT - DNODE_SHIFT)) + i;
@@ -497,6 +503,7 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 			if (err != 0)
 				break;
 		}
+		sgbuf_unmap(abuf->b_data);
 		(void) arc_buf_remove_ref(abuf, &abuf);
 	} else if (type == DMU_OT_SA) {
 		uint32_t aflags = ARC_WAIT;
@@ -530,10 +537,12 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 				/* Send a block filled with 0x"zfs badd bloc" */
 				abuf = arc_buf_alloc(spa, blksz, &abuf,
 				    ARC_BUFC_DATA);
-				for (ptr = abuf->b_data;
-				    (char *)ptr < (char *)abuf->b_data + blksz;
+				/* XXX: Implement memset-like sgbuf_set function */
+				for (ptr = sgbuf_map(abuf->b_data);
+				    (char *)ptr < (char *)sgbuf_map_peek(abuf->b_data) + blksz;
 				    ptr++)
 					*ptr = 0x2f5baddb10cULL;
+				sgbuf_unmap(abuf->b_data);
 			} else {
 				return (SET_ERROR(EIO));
 			}
@@ -1431,12 +1440,13 @@ restore_object(struct restorearg *ra, objset_t *os, struct drr_object *drro)
 		dmu_buf_will_dirty(db, tx);
 
 		ASSERT3U(db->db_size, >=, drro->drr_bonuslen);
-		bcopy(data, db->db_data.zio_buf, drro->drr_bonuslen);
+		sgbuf_convert(data, db->db_data.zio_buf, TO_SGBUF, 0, 0, drro->drr_bonuslen);
 		if (ra->byteswap) {
 			dmu_object_byteswap_t byteswap =
 			    DMU_OT_BYTESWAP(drro->drr_bonustype);
-			dmu_ot_byteswap[byteswap].ob_func(db->db_data.zio_buf,
+			dmu_ot_byteswap[byteswap].ob_func(sgbuf_map(db->db_data.zio_buf),
 			    drro->drr_bonuslen);
+			sgbuf_unmap(db->db_data.zio_buf);
 		}
 		dmu_buf_rele(db, FTAG);
 	}
@@ -1491,7 +1501,8 @@ restore_write(struct restorearg *ra, objset_t *os,
 
 	abuf = dmu_request_arcbuf(bonus, drrw->drr_length);
 
-	data = restore_read(ra, drrw->drr_length, abuf->b_data);
+	data = restore_read(ra, drrw->drr_length, sgbuf_map(abuf->b_data));
+	sgbuf_unmap(abuf->b_data);
 	if (data == NULL) {
 		dmu_return_arcbuf(abuf);
 		dmu_buf_rele(bonus, FTAG);
@@ -1572,7 +1583,7 @@ restore_write_byref(struct restorearg *ra, objset_t *os,
 		dmu_tx_abort(tx);
 		return (err);
 	}
-	dmu_write(os, drrwbr->drr_object,
+	dmu_write_sgbuf(os, drrwbr->drr_object,
 	    drrwbr->drr_offset, drrwbr->drr_length, dbp->db_data.zio_buf, tx);
 	dmu_buf_rele(dbp, FTAG);
 	dmu_tx_commit(tx);
@@ -1662,7 +1673,8 @@ restore_spill(struct restorearg *ra, objset_t *os, struct drr_spill *drrs)
 	if (db_spill->db_size < drrs->drr_length)
 		VERIFY(0 == dbuf_spill_set_blksz(db_spill,
 		    drrs->drr_length, tx));
-	bcopy(data, db_spill->db_data.zio_buf, drrs->drr_length);
+	sgbuf_convert(data, db_spill->db_data.zio_buf, TO_SGBUF, 0, 0,
+	    drrs->drr_length);
 
 	dmu_buf_rele(db, FTAG);
 	dmu_buf_rele(db_spill, FTAG);

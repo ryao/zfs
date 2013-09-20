@@ -372,7 +372,7 @@ mzap_open(objset_t *os, uint64_t obj, dmu_buf_t *db)
 	zap->zap_object = obj;
 	zap->zap_dbuf = db;
 
-	if (*(uint64_t *)db->db_data.zio_buf != ZBT_MICRO) {
+	if (sgbuf_getu64(db->db_data.zio_buf, 0) != ZBT_MICRO) {
 		mutex_init(&zap->zap_f.zap_num_entries_mtx, 0, 0, 0);
 		zap->zap_f.zap_block_shift = highbit64(db->db_size) - 1;
 	} else {
@@ -522,6 +522,7 @@ zap_unlockdir(zap_t *zap)
 static int
 mzap_upgrade(zap_t **zapp, dmu_tx_t *tx, zap_flags_t flags)
 {
+	sgbuf_t *buf;
 	mzap_phys_t *mzp;
 	int i, sz, nchunks;
 	int err = 0;
@@ -530,17 +531,16 @@ mzap_upgrade(zap_t **zapp, dmu_tx_t *tx, zap_flags_t flags)
 	ASSERT(RW_WRITE_HELD(&zap->zap_rwlock));
 
 	sz = zap->zap_dbuf->db_size;
-	mzp = zio_buf_alloc(sz);
-	bcopy(zap->zap_dbuf->db_data.zio_buf, mzp, sz);
+	buf = zio_buf_alloc(sz);
+	sgbuf_bcopy(zap->zap_dbuf->db_data.zio_buf, buf, 0, 0, sz);
+	mzp = sgbuf_map(buf);
 	nchunks = zap->zap_m.zap_num_chunks;
 
 	if (!flags) {
 		err = dmu_object_set_blocksize(zap->zap_objset, zap->zap_object,
 		    1ULL << fzap_default_block_shift, 0, tx);
-		if (err) {
-			zio_buf_free(mzp, sz);
-			return (err);
-		}
+		if (err)
+			goto out;
 	}
 
 	dprintf("upgrading obj=%llu with %u chunks\n",
@@ -564,8 +564,10 @@ mzap_upgrade(zap_t **zapp, dmu_tx_t *tx, zap_flags_t flags)
 		if (err)
 			break;
 	}
-	zio_buf_free(mzp, sz);
 	*zapp = zap;
+out:
+	sgbuf_unmap(buf);
+	zio_buf_free(buf, sz);
 	return (err);
 }
 
@@ -587,10 +589,11 @@ mzap_create_impl(objset_t *os, uint64_t obj, int normflags, zap_flags_t flags,
 #endif
 
 	dmu_buf_will_dirty(db, tx);
-	zp = (mzap_phys_t *) db->db_data.zio_buf;
+	zp = sgbuf_map(db->db_data.zio_buf);
 	zp->mz_block_type = ZBT_MICRO;
 	zp->mz_salt = ((uintptr_t)db ^ (uintptr_t)tx ^ (obj << 1)) | 1ULL;
 	zp->mz_normflags = normflags;
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 
 	if (flags != 0) {

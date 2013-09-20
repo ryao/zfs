@@ -126,8 +126,9 @@ bpobj_free(objset_t *os, uint64_t obj, dmu_tx_t *tx)
 		ASSERT3U(offset, >=, dbuf->db_offset);
 		ASSERT3U(offset, <, dbuf->db_offset + dbuf->db_size);
 
-		objarray = (uint64_t *)dbuf->db_data.zio_buf;
+		objarray = sgbuf_map(dbuf->db_data.zio_buf);
 		bpobj_free(os, objarray[blkoff], tx);
+		sgbuf_unmap(dbuf->db_data.zio_buf);
 	}
 	if (dbuf) {
 		dmu_buf_rele(dbuf, FTAG);
@@ -170,7 +171,7 @@ bpobj_open(bpobj_t *bpo, objset_t *os, uint64_t object)
 	bpo->bpo_epb = doi.doi_data_block_size >> SPA_BLKPTRSHIFT;
 	bpo->bpo_havecomp = (doi.doi_bonus_size > BPOBJ_SIZE_V0);
 	bpo->bpo_havesubobj = (doi.doi_bonus_size > BPOBJ_SIZE_V1);
-	bpo->bpo_phys = (bpobj_phys_t *)bpo->bpo_dbuf->db_data.zio_buf;
+	bpo->bpo_phys = sgbuf_map(bpo->bpo_dbuf->db_data.zio_buf);
 	return (0);
 }
 
@@ -181,6 +182,7 @@ bpobj_close(bpobj_t *bpo)
 	if (bpo->bpo_object == 0)
 		return;
 
+	sgbuf_unmap(bpo->bpo_dbuf->db_data.zio_buf);
 	dmu_buf_rele(bpo->bpo_dbuf, bpo);
 	if (bpo->bpo_cached_dbuf != NULL)
 		dmu_buf_rele(bpo->bpo_cached_dbuf, bpo);
@@ -234,9 +236,10 @@ bpobj_iterate_impl(bpobj_t *bpo, bpobj_itor_t func, void *arg, dmu_tx_t *tx,
 		ASSERT3U(offset, >=, dbuf->db_offset);
 		ASSERT3U(offset, <, dbuf->db_offset + dbuf->db_size);
 
-		bparray = (blkptr_t *)dbuf->db_data.zio_buf;
+		bparray = sgbuf_map(dbuf->db_data.zio_buf);
 		bp = &bparray[blkoff];
 		err = func(arg, bp, tx);
+		sgbuf_unmap(dbuf->db_data.zio_buf);
 		if (err)
 			break;
 		if (free) {
@@ -294,15 +297,19 @@ bpobj_iterate_impl(bpobj_t *bpo, bpobj_itor_t func, void *arg, dmu_tx_t *tx,
 		ASSERT3U(offset, >=, dbuf->db_offset);
 		ASSERT3U(offset, <, dbuf->db_offset + dbuf->db_size);
 
-		objarray = (uint64_t *) dbuf->db_data.zio_buf;
+		objarray = sgbuf_map(dbuf->db_data.zio_buf);
 		err = bpobj_open(&sublist, bpo->bpo_os, objarray[blkoff]);
-		if (err)
+		if (err) {
+			sgbuf_unmap(dbuf->db_data.zio_buf);
 			break;
+		}
 		if (free) {
 			err = bpobj_space(&sublist,
 			    &used_before, &comp_before, &uncomp_before);
-			if (err)
+			if (err) {
+				sgbuf_unmap(dbuf->db_data.zio_buf);
 				break;
+			}
 		}
 		err = bpobj_iterate_impl(&sublist, func, arg, tx, free);
 		if (free) {
@@ -316,18 +323,23 @@ bpobj_iterate_impl(bpobj_t *bpo, bpobj_itor_t func, void *arg, dmu_tx_t *tx,
 		}
 
 		bpobj_close(&sublist);
-		if (err)
+		if (err) {
+			sgbuf_unmap(dbuf->db_data.zio_buf);
 			break;
+		}
 		if (free) {
 			err = dmu_object_free(bpo->bpo_os,
 			    objarray[blkoff], tx);
-			if (err)
+			if (err) {
+				sgbuf_unmap(dbuf->db_data.zio_buf);
 				break;
+			}
 			bpo->bpo_phys->bpo_num_subobjs--;
 			ASSERT3S(bpo->bpo_phys->bpo_num_subobjs, >=, 0);
 		}
 	}
 	if (dbuf) {
+		sgbuf_unmap(dbuf->db_data.zio_buf);
 		dmu_buf_rele(dbuf, FTAG);
 		dbuf = NULL;
 	}
@@ -431,7 +443,7 @@ bpobj_enqueue_subobj(bpobj_t *bpo, uint64_t subobj, dmu_tx_t *tx)
 			 */
 			VERIFY3U(subdb->db_size, >=,
 			    numsubsub * sizeof (subobj));
-			dmu_write(bpo->bpo_os, bpo->bpo_phys->bpo_subobjs,
+			dmu_write_sgbuf(bpo->bpo_os, bpo->bpo_phys->bpo_subobjs,
 			    bpo->bpo_phys->bpo_num_subobjs * sizeof (subobj),
 			    numsubsub * sizeof (subobj),
 			    subdb->db_data.zio_buf, tx);
@@ -458,7 +470,6 @@ bpobj_enqueue(bpobj_t *bpo, const blkptr_t *bp, dmu_tx_t *tx)
 	blkptr_t stored_bp = *bp;
 	uint64_t offset;
 	int blkoff;
-	blkptr_t *bparray;
 
 	ASSERT(!BP_IS_HOLE(bp));
 	ASSERT(bpo->bpo_object != dmu_objset_pool(bpo->bpo_os)->dp_empty_bpobj);
@@ -502,8 +513,8 @@ bpobj_enqueue(bpobj_t *bpo, const blkptr_t *bp, dmu_tx_t *tx)
 	}
 
 	dmu_buf_will_dirty(bpo->bpo_cached_dbuf, tx);
-	bparray = (blkptr_t *)bpo->bpo_cached_dbuf->db_data.zio_buf;
-	bparray[blkoff] = stored_bp;
+	sgbuf_convert(&stored_bp, bpo->bpo_cached_dbuf->db_data.zio_buf,
+	    TO_SGBUF, 0, sizeof(blkptr_t) * blkoff, sizeof(blkptr_t));
 
 	dmu_buf_will_dirty(bpo->bpo_dbuf, tx);
 	bpo->bpo_phys->bpo_num_blkptrs++;

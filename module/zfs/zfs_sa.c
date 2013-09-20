@@ -77,15 +77,17 @@ zfs_sa_readlink(znode_t *zp, uio_t *uio)
 
 	bufsz = zp->z_size;
 	if (bufsz + ZFS_OLD_ZNODE_PHYS_SIZE <= db->db_size) {
-		error = uiomove((caddr_t)db->db_data.zio_buf +
+		error = uiomove((caddr_t)sgbuf_map(db->db_data.zio_buf) +
 		    ZFS_OLD_ZNODE_PHYS_SIZE,
 		    MIN((size_t)bufsz, uio->uio_resid), UIO_READ, uio);
+		sgbuf_unmap(db->db_data.zio_buf);
 	} else {
 		dmu_buf_t *dbp;
 		if ((error = dmu_buf_hold(ZTOZSB(zp)->z_os, zp->z_id,
 		    0, FTAG, &dbp, DMU_READ_NO_PREFETCH)) == 0) {
-			error = uiomove(dbp->db_data.zio_buf,
+			error = uiomove(sgbuf_map(dbp->db_data.zio_buf),
 			    MIN((size_t)bufsz, uio->uio_resid), UIO_READ, uio);
+			sgbuf_unmap(dbp->db_data.zio_buf);
 			dmu_buf_rele(dbp, FTAG);
 		}
 	}
@@ -101,7 +103,7 @@ zfs_sa_symlink(znode_t *zp, char *link, int len, dmu_tx_t *tx)
 		VERIFY(dmu_set_bonus(db,
 		    len + ZFS_OLD_ZNODE_PHYS_SIZE, tx) == 0);
 		if (len) {
-			bcopy(link, (caddr_t)db->db_data.zio_buf +
+			sgbuf_convert(link, db->db_data.zio_buf, TO_SGBUF, 0,
 			    ZFS_OLD_ZNODE_PHYS_SIZE, len);
 		}
 	} else {
@@ -114,7 +116,7 @@ zfs_sa_symlink(znode_t *zp, char *link, int len, dmu_tx_t *tx)
 		dmu_buf_will_dirty(dbp, tx);
 
 		ASSERT3U(len, <=, dbp->db_size);
-		bcopy(link, dbp->db_data.zio_buf, len);
+		sgbuf_convert(link, dbp->db_data.zio_buf, TO_SGBUF, 0, 0, len);
 		dmu_buf_rele(dbp, FTAG);
 	}
 }
@@ -145,8 +147,8 @@ zfs_sa_get_scanstamp(znode_t *zp, xvattr_t *xvap)
 		    ZFS_OLD_ZNODE_PHYS_SIZE;
 
 		if (len <= doi.doi_bonus_size) {
-			(void) memcpy(xoap->xoa_av_scanstamp,
-			    db->db_data.zio_buf + ZFS_OLD_ZNODE_PHYS_SIZE,
+			sgbuf_convert(xoap->xoa_av_scanstamp,
+			    db->db_data.zio_buf, TO_VOIDP, 0, ZFS_OLD_ZNODE_PHYS_SIZE,
 			    sizeof (xoap->xoa_av_scanstamp));
 		}
 	}
@@ -175,8 +177,9 @@ zfs_sa_set_scanstamp(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 		    ZFS_OLD_ZNODE_PHYS_SIZE;
 		if (len > doi.doi_bonus_size)
 			VERIFY(dmu_set_bonus(db, len, tx) == 0);
-		(void) memcpy(db->db_data.zio_buf + ZFS_OLD_ZNODE_PHYS_SIZE,
-		    xoap->xoa_av_scanstamp, sizeof (xoap->xoa_av_scanstamp));
+		sgbuf_convert(xoap->xoa_av_scanstamp,
+		    db->db_data.zio_buf, TO_SGBUF, 0, ZFS_OLD_ZNODE_PHYS_SIZE,
+		    sizeof (xoap->xoa_av_scanstamp));
 
 		zp->z_pflags |= ZFS_BONUS_SCANSTAMP;
 		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zsb),
@@ -375,8 +378,8 @@ zfs_sa_upgrade(sa_handle_t *hdl, dmu_tx_t *tx)
 	/* if scanstamp then add scanstamp */
 
 	if (zp->z_pflags & ZFS_BONUS_SCANSTAMP) {
-		bcopy((caddr_t)db->db_data.zio_buf + ZFS_OLD_ZNODE_PHYS_SIZE,
-		    scanstamp, AV_SCANSTAMP_SZ);
+		sgbuf_convert(scanstamp, db->db_data.zio_buf, TO_VOIDP, 0,
+		    ZFS_OLD_ZNODE_PHYS_SIZE, AV_SCANSTAMP_SZ);
 		SA_ADD_BULK_ATTR(sa_attrs, count, SA_ZPL_SCANSTAMP(zsb),
 		    NULL, scanstamp, AV_SCANSTAMP_SZ);
 		zp->z_pflags &= ~ZFS_BONUS_SCANSTAMP;

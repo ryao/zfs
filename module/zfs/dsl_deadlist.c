@@ -111,7 +111,7 @@ dsl_deadlist_open(dsl_deadlist_t *dl, objset_t *os, uint64_t object)
 	}
 
 	dl->dl_oldfmt = B_FALSE;
-	dl->dl_phys = (dsl_deadlist_phys_t *) dl->dl_dbuf->db_data.zio_buf;
+	dl->dl_phys = sgbuf_map(dl->dl_dbuf->db_data.zio_buf);
 	dl->dl_havetree = B_FALSE;
 }
 
@@ -135,6 +135,7 @@ dsl_deadlist_close(dsl_deadlist_t *dl)
 		}
 		avl_destroy(&dl->dl_tree);
 	}
+	sgbuf_unmap(dl->dl_dbuf->db_data.zio_buf);
 	dmu_buf_rele(dl->dl_dbuf, dl);
 	mutex_destroy(&dl->dl_lock);
 	dl->dl_dbuf = NULL;
@@ -459,7 +460,7 @@ dsl_deadlist_merge(dsl_deadlist_t *dl, uint64_t obj, dmu_tx_t *tx)
 	zap_cursor_t zc;
 	zap_attribute_t za;
 	dmu_buf_t *bonus;
-	dsl_deadlist_phys_t *dlp;
+	sgbuf_t *dlp_buf;
 	dmu_object_info_t doi;
 
 	VERIFY3U(0, ==, dmu_object_info(dl->dl_os, obj, &doi));
@@ -482,9 +483,9 @@ dsl_deadlist_merge(dsl_deadlist_t *dl, uint64_t obj, dmu_tx_t *tx)
 	zap_cursor_fini(&zc);
 
 	VERIFY3U(0, ==, dmu_bonus_hold(dl->dl_os, obj, FTAG, &bonus));
-	dlp = (dsl_deadlist_phys_t *) bonus->db_data.zio_buf;
+	dlp_buf = bonus->db_data.zio_buf;
 	dmu_buf_will_dirty(bonus, tx);
-	bzero(dlp, sizeof (*dlp));
+	sgbuf_bzero(dlp_buf, 0, sizeof (dsl_deadlist_phys_t));
 	dmu_buf_rele(bonus, FTAG);
 }
 

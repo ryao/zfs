@@ -45,6 +45,7 @@
 #include <sys/fs/zfs.h>
 #include <sys/zap.h>
 #include <sys/refcount.h>
+#include <sys/sgbuf.h>
 #include <sys/zap_impl.h>
 #include <sys/zap_leaf.h>
 
@@ -91,7 +92,7 @@ fzap_upgrade(zap_t *zap, dmu_tx_t *tx, zap_flags_t flags)
 	 * explicitly zero it since it might be coming from an
 	 * initialized microzap
 	 */
-	bzero(zap->zap_dbuf->db_data.zio_buf, zap->zap_dbuf->db_size);
+	sgbuf_bzero(zap->zap_dbuf->db_data.zio_buf, 0, zap->zap_dbuf->db_size);
 	zp->zap_block_type = ZBT_HEADER;
 	zp->zap_magic = ZAP_MAGIC;
 
@@ -117,11 +118,12 @@ fzap_upgrade(zap_t *zap, dmu_tx_t *tx, zap_flags_t flags)
 
 	l = kmem_zalloc(sizeof (zap_leaf_t), KM_PUSHPAGE);
 	l->l_dbuf = db;
-	l->l_phys = (zap_leaf_phys_t *) db->db_data.zio_buf;
+	l->l_phys = sgbuf_map(db->db_data.zio_buf);
 
 	zap_leaf_init(l, zp->zap_normflags != 0);
 
 	kmem_free(l, sizeof (zap_leaf_t));
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 }
 
@@ -181,18 +183,25 @@ zap_table_grow(zap_t *zap, zap_table_phys_t *tbl,
 	VERIFY(0 == dmu_buf_hold(zap->zap_objset, zap->zap_object,
 	    (newblk + 2*b+0) << bs, FTAG, &db_new, DMU_READ_NO_PREFETCH));
 	dmu_buf_will_dirty(db_new, tx);
-	transfer_func((uint64_t *)db_old->db_data.zio_buf,
-	    (uint64_t *) db_new->db_data.zio_buf, hepb);
+	transfer_func(sgbuf_map(db_old->db_data.zio_buf),
+	    sgbuf_map(db_new->db_data.zio_buf), hepb);
+	sgbuf_unmap(db_new->db_data.zio_buf);
 	dmu_buf_rele(db_new, FTAG);
 
 	/* second half of entries in old[b] go to new[2*b+1] */
 	VERIFY(0 == dmu_buf_hold(zap->zap_objset, zap->zap_object,
 	    (newblk + 2*b+1) << bs, FTAG, &db_new, DMU_READ_NO_PREFETCH));
 	dmu_buf_will_dirty(db_new, tx);
-	transfer_func((uint64_t *)db_old->db_data.zio_buf + hepb,
-	    (uint64_t *)db_new->db_data.zio_buf, hepb);
+	/*
+	 * XXX: Clean this up later. For now, it is okay because mapping twice
+	 * just returns existing mapping
+	 */
+	transfer_func(SGBUF_MAP_OFFSET(db_old->db_data.zio_buf, hepb, uint64_t),
+	    sgbuf_map(db_new->db_data.zio_buf), hepb);
+	sgbuf_unmap(db_new->db_data.zio_buf);
 	dmu_buf_rele(db_new, FTAG);
 
+	sgbuf_unmap(db_old->db_data.zio_buf);
 	dmu_buf_rele(db_old, FTAG);
 
 	tbl->zt_blks_copied++;
@@ -254,12 +263,12 @@ zap_table_store(zap_t *zap, zap_table_phys_t *tbl, uint64_t idx, uint64_t val,
 			return (err);
 		}
 		dmu_buf_will_dirty(db2, tx);
-		((uint64_t *)db2->db_data.zio_buf)[off2] = val;
-		((uint64_t *)db2->db_data.zio_buf)[off2+1] = val;
+		sgbuf_setu64(db2->db_data.zio_buf, 2*off2+0, val);
+		sgbuf_setu64(db2->db_data.zio_buf, 2*off2+1, val);
 		dmu_buf_rele(db2, FTAG);
 	}
 
-	((uint64_t *)db->db_data.zio_buf)[off] = val;
+	sgbuf_setu64(db->db_data.zio_buf, off, val);
 	dmu_buf_rele(db, FTAG);
 
 	return (0);
@@ -282,7 +291,7 @@ zap_table_load(zap_t *zap, zap_table_phys_t *tbl, uint64_t idx, uint64_t *valp)
 	    (tbl->zt_blk + blk) << bs, FTAG, &db, DMU_READ_NO_PREFETCH);
 	if (err)
 		return (err);
-	*valp = ((uint64_t *)db->db_data.zio_buf)[off];
+	*valp = sgbuf_getu64(db->db_data.zio_buf, off);
 	dmu_buf_rele(db, FTAG);
 
 	if (tbl->zt_nextblk != 0) {
@@ -351,8 +360,9 @@ zap_grow_ptrtbl(zap_t *zap, dmu_tx_t *tx)
 			return (err);
 		dmu_buf_will_dirty(db_new, tx);
 		zap_ptrtbl_transfer(&ZAP_EMBEDDED_PTRTBL_ENT(zap, 0),
-		    (uint64_t *) db_new->db_data.zio_buf,
+		    sgbuf_map(db_new->db_data.zio_buf),
 		    1 << ZAP_EMBEDDED_PTRTBL_SHIFT(zap));
+		sgbuf_unmap(db_new->db_data.zio_buf);
 		dmu_buf_rele(db_new, FTAG);
 
 		zap->zap_f.zap_phys->zap_ptrtbl.zt_blk = newblk;
@@ -532,7 +542,7 @@ zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
 		dmu_buf_will_dirty(db, tx);
 	ASSERT3U(l->l_blkid, ==, blkid);
 	ASSERT3P(l->l_dbuf, ==, db);
-	ASSERT3P(l->l_phys, ==, l->l_dbuf->db_data.zio_buf);
+	ASSERT3P(l->l_phys, ==, sgbuf_map_peek(l->l_dbuf->db_data.zio_buf));
 	ASSERT3U(l->l_phys->l_hdr.lh_block_type, ==, ZBT_LEAF);
 	ASSERT3U(l->l_phys->l_hdr.lh_magic, ==, ZAP_LEAF_MAGIC);
 
@@ -578,8 +588,7 @@ zap_deref_leaf(zap_t *zap, uint64_t h, dmu_tx_t *tx, krw_t lt, zap_leaf_t **lp)
 	int err;
 
 	ASSERT(zap->zap_dbuf == NULL ||
-	    zap->zap_f.zap_phys == (zap_phys_t *)
-	    zap->zap_dbuf->db_data.zio_buf);
+	     zap->zap_f.zap_phys == sgbuf_map_peek(zap->zap_dbuf->db_data.zio_buf));
 	ASSERT3U(zap->zap_f.zap_phys->zap_magic, ==, ZAP_MAGIC);
 	idx = ZAP_HASH_IDX(h, zap->zap_f.zap_phys->zap_ptrtbl.zt_shift);
 	err = zap_idx_to_blk(zap, idx, &blk);
@@ -1327,9 +1336,9 @@ fzap_get_stats(zap_t *zap, zap_stats_t *zs)
 			    (zap->zap_f.zap_phys->zap_ptrtbl.zt_blk + b) << bs,
 			    FTAG, &db, DMU_READ_NO_PREFETCH);
 			if (err == 0) {
-				zap_stats_ptrtbl(zap, (uint64_t *)
-				    db->db_data.zio_buf,
+				zap_stats_ptrtbl(zap, sgbuf_map(db->db_data.zio_buf),
 				    1<<(bs-3), zs);
+				sgbuf_unmap(db->db_data.zio_buf);
 				dmu_buf_rele(db, FTAG);
 			}
 		}

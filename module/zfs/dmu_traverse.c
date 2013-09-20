@@ -282,6 +282,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		int32_t i;
 		int32_t epb = BP_GET_LSIZE(bp) >> SPA_BLKPTRSHIFT;
 		zbookmark_phys_t *czb;
+		blkptr_t *buf_bp;
 
 		err = arc_read(NULL, td->td_spa, bp, arc_getbuf_func, &buf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
@@ -289,13 +290,14 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 			goto post;
 
 		czb = kmem_alloc(sizeof (zbookmark_phys_t), KM_PUSHPAGE);
+		buf_bp = sgbuf_map(buf->b_data);
 
 		for (i = 0; i < epb; i++) {
 			SET_BOOKMARK(czb, zb->zb_objset, zb->zb_object,
 			    zb->zb_level - 1,
 			    zb->zb_blkid * epb + i);
 			traverse_prefetch_metadata(td,
-			    &((blkptr_t *)buf->b_data)[i], czb);
+			    &buf_bp[i], czb);
 		}
 
 		/* recursively visitbp() blocks below this */
@@ -304,11 +306,12 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 			    zb->zb_level - 1,
 			    zb->zb_blkid * epb + i);
 			err = traverse_visitbp(td, dnp,
-			    &((blkptr_t *)buf->b_data)[i], czb);
+			    &buf_bp[i], czb);
 			if (err != 0)
 				break;
 		}
 
+		sgbuf_unmap(buf->b_data);
 		kmem_free(czb, sizeof (zbookmark_phys_t));
 
 	} else if (BP_GET_TYPE(bp) == DMU_OT_DNODE) {
@@ -320,7 +323,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
 		if (err != 0)
 			goto post;
-		dnp = buf->b_data;
+		dnp = sgbuf_map(buf->b_data);
 
 		for (i = 0; i < epb; i++) {
 			prefetch_dnode_metadata(td, &dnp[i], zb->zb_objset,
@@ -334,6 +337,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 			if (err != 0)
 				break;
 		}
+		sgbuf_unmap(buf->b_data);
 	} else if (BP_GET_TYPE(bp) == DMU_OT_OBJSET) {
 		uint32_t flags = ARC_WAIT;
 		objset_phys_t *osp;
@@ -344,7 +348,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		if (err != 0)
 			goto post;
 
-		osp = buf->b_data;
+		osp = sgbuf_map(buf->b_data);
 		dnp = &osp->os_meta_dnode;
 		prefetch_dnode_metadata(td, dnp, zb->zb_objset,
 		    DMU_META_DNODE_OBJECT);
@@ -367,6 +371,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 			err = traverse_dnode(td, dnp, zb->zb_objset,
 			    DMU_USERUSED_OBJECT);
 		}
+		sgbuf_unmap(buf->b_data);
 	}
 
 	if (buf)
@@ -552,8 +557,9 @@ traverse_impl(spa_t *spa, dsl_dataset_t *ds, uint64_t objset, blkptr_t *rootbp,
 		if (err != 0)
 			return (err);
 
-		osp = buf->b_data;
+		osp = sgbuf_map(buf->b_data);
 		traverse_zil(td, &osp->os_zil_header);
+		sgbuf_unmap(buf->b_data);
 		(void) arc_buf_remove_ref(buf, &buf);
 	}
 

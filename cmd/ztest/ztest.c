@@ -1303,26 +1303,30 @@ ztest_tx_assign(dmu_tx_t *tx, uint64_t txg_how, const char *tag)
 	return (txg);
 }
 
+/* XXX: Write sgbuf_memset to replace this. */
 static void
-ztest_pattern_set(void *buf, uint64_t size, uint64_t value)
+ztest_pattern_set(sgbuf_t *buf, uint64_t size, uint64_t value)
 {
-	uint64_t *ip = buf;
-	uint64_t *ip_end = (uint64_t *)((uintptr_t)buf + (uintptr_t)size);
+	uint64_t *ip = sgbuf_map(buf);
+	uint64_t *ip_end = (uint64_t *)((uintptr_t)ip + (uintptr_t)size);
 
 	while (ip < ip_end)
 		*ip++ = value;
+	sgbuf_unmap(buf);
 }
 
 #ifndef NDEBUG
 static boolean_t
-ztest_pattern_match(void *buf, uint64_t size, uint64_t value)
+ztest_pattern_match(sgbuf_t *buf, uint64_t size, uint64_t value)
 {
-	uint64_t *ip = buf;
-	uint64_t *ip_end = (uint64_t *)((uintptr_t)buf + (uintptr_t)size);
+	uint64_t *ip = sgbuf_map(buf);
+	uint64_t *ip_end = (uint64_t *)((uintptr_t)ip + (uintptr_t)size);
 	uint64_t diff = 0;
 
 	while (ip < ip_end)
 		diff |= (value - *ip++);
+
+	sgbuf_unmap(buf);
 
 	return (diff == 0);
 }
@@ -1363,7 +1367,7 @@ ztest_bt_bonus(dmu_buf_t *db)
 	dmu_object_info_from_db(db, &doi);
 	ASSERT3U(doi.doi_bonus_size, <=, db->db_size);
 	ASSERT3U(doi.doi_bonus_size, >=, sizeof (*bt));
-	bt = (void *)(db->db_data.zio_buf + doi.doi_bonus_size - sizeof (*bt));
+	bt = (ztest_block_tag_t *) SGBUF_MAP_OFFSET(db->db_data.zio_buf, doi.doi_bonus_size - sizeof (*bt), char);
 
 	return (bt);
 }
@@ -1553,6 +1557,7 @@ ztest_replay_create(ztest_ds_t *zd, lr_create_t *lr, boolean_t byteswap)
 	bbt = ztest_bt_bonus(db);
 	dmu_buf_will_dirty(db, tx);
 	ztest_bt_generate(bbt, os, lr->lr_foid, -1ULL, lr->lr_gen, txg, txg);
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 
 	VERIFY3U(0, ==, zap_add(os, lr->lr_doid, name, sizeof (uint64_t), 1,
@@ -1725,12 +1730,13 @@ ztest_replay_write(ztest_ds_t *zd, lr_write_t *lr, boolean_t byteswap)
 	if (abuf == NULL) {
 		dmu_write(os, lr->lr_foid, offset, length, data, tx);
 	} else {
-		bcopy(data, abuf->b_data, length);
+		sgbuf_convert(data, abuf->b_data, TO_SGBUF, 0, 0, length);
 		dmu_assign_arcbuf(db, offset, abuf, tx);
 	}
 
 	(void) ztest_log_write(zd, tx, lr);
 
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 
 	dmu_tx_commit(tx);
@@ -1840,6 +1846,7 @@ ztest_replay_setattr(ztest_ds_t *zd, lr_setattr_t *lr, boolean_t byteswap)
 
 	ztest_bt_generate(bbt, os, lr->lr_foid, -1ULL, lr->lr_mode, txg, crtxg);
 
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 
 	(void) ztest_log_setattr(zd, tx, lr);
@@ -1928,6 +1935,7 @@ ztest_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 	}
 
 	dmu_object_info_from_db(db, &doi);
+	sgbuf_unmap(db->db_data.zio_buf);
 	dmu_buf_rele(db, FTAG);
 	db = NULL;
 
@@ -2042,6 +2050,7 @@ ztest_lookup(ztest_ds_t *zd, ztest_od_t *od, int count)
 			od->od_type = doi.doi_type;
 			od->od_blocksize = doi.doi_data_block_size;
 			od->od_gen = bbt->bt_gen;
+			sgbuf_unmap(db->db_data.zio_buf);
 			dmu_buf_rele(db, FTAG);
 			ztest_object_unlock(zd, od->od_object);
 		}
@@ -4120,15 +4129,16 @@ ztest_dmu_read_write_zcopy(ztest_ds_t *zd, uint64_t id)
 		for (off = bigoff, j = 0; j < s; j++, off += chunksize) {
 			dmu_buf_t *dbt;
 			if (i != 5) {
-				bcopy((caddr_t)bigbuf + (off - bigoff),
-				    bigbuf_arcbufs[j]->b_data, chunksize);
+				sgbuf_convert(bigbuf,
+				    bigbuf_arcbufs[j]->b_data, TO_SGBUF,
+				    (off - bigoff), 0, chunksize);
 			} else {
-				bcopy((caddr_t)bigbuf + (off - bigoff),
-				    bigbuf_arcbufs[2 * j]->b_data,
-				    chunksize / 2);
-				bcopy((caddr_t)bigbuf + (off - bigoff) +
-				    chunksize / 2,
-				    bigbuf_arcbufs[2 * j + 1]->b_data,
+				sgbuf_convert(bigbuf,
+				    bigbuf_arcbufs[2 *j]->b_data, TO_SGBUF,
+				    (off - bigoff), 0, chunksize / 2);
+				sgbuf_convert(bigbuf,
+				    bigbuf_arcbufs[2 *j + 1]->b_data, TO_SGBUF,
+				    (off - bigoff) + chunksize / 2, 0,
 				    chunksize / 2);
 			}
 
@@ -5180,7 +5190,7 @@ ztest_ddt_repair(ztest_ds_t *zd, uint64_t id)
 	enum zio_checksum checksum = spa_dedup_checksum(spa);
 	dmu_buf_t *db;
 	dmu_tx_t *tx;
-	void *buf;
+	sgbuf_t *buf;
 	blkptr_t blk;
 	int copies = 2 * ZIO_DEDUPDITTO_MIN;
 	int i;

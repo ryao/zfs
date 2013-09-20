@@ -262,7 +262,8 @@ vdev_mirror_scrub_done(zio_t *zio)
 		while ((pio = zio_walk_parents(zio)) != NULL) {
 			mutex_enter(&pio->io_lock);
 			ASSERT3U(zio->io_size, >=, pio->io_size);
-			bcopy(zio->io_data, pio->io_data, pio->io_size);
+			sgbuf_bcopy(zio->io_data, pio->io_data,
+			    0, 0, pio->io_size);
 			mutex_exit(&pio->io_lock);
 		}
 		mutex_exit(&zio->io_lock);
@@ -372,9 +373,9 @@ vdev_mirror_io_start(zio_t *zio)
 	while (children--) {
 		mc = &mm->mm_child[c];
 		zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
-		    mc->mc_vd, mc->mc_offset, ((char *)zio->io_data + zio->io_data_offset), 0, zio->io_size,
-		    zio->io_type, zio->io_priority, 0,
-		    vdev_mirror_child_done, mc));
+		    mc->mc_vd, mc->mc_offset, zio->io_data,
+		    zio->io_data_offset, zio->io_size, zio->io_type,
+		    zio->io_priority, 0, vdev_mirror_child_done, mc));
 		c++;
 	}
 
@@ -457,9 +458,9 @@ vdev_mirror_io_done(zio_t *zio)
 		mc = &mm->mm_child[c];
 		zio_vdev_io_redone(zio);
 		zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
-		    mc->mc_vd, mc->mc_offset, ((char *)zio->io_data + zio->io_data_offset), 0, zio->io_size,
-		    ZIO_TYPE_READ, zio->io_priority, 0,
-		    vdev_mirror_child_done, mc));
+		    mc->mc_vd, mc->mc_offset, zio->io_data,
+		    zio->io_data_offset, zio->io_size, ZIO_TYPE_READ,
+		    zio->io_priority, 0, vdev_mirror_child_done, mc));
 		return;
 	}
 
@@ -498,7 +499,7 @@ vdev_mirror_io_done(zio_t *zio)
 
 			zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
 			    mc->mc_vd, mc->mc_offset,
-			    ((char *)zio->io_data + zio->io_data_offset), 0, zio->io_size,
+			    zio->io_data, zio->io_data_offset, zio->io_size,
 			    ZIO_TYPE_WRITE, ZIO_PRIORITY_ASYNC_WRITE,
 			    ZIO_FLAG_IO_REPAIR | (unexpected_errors ?
 			    ZIO_FLAG_SELF_HEAL : 0), NULL, NULL));

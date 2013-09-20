@@ -548,7 +548,7 @@ dmu_tx_count_free(dmu_tx_hold_t *txh, uint64_t off, uint64_t len)
 			break;
 		}
 
-		bp = (blkptr_t *) dbuf->db.db_data.zio_buf;
+		bp = sgbuf_map(dbuf->db.db_data.zio_buf);
 		bp += blkoff;
 
 		for (i = 0; i < tochk; i++) {
@@ -559,6 +559,7 @@ dmu_tx_count_free(dmu_tx_hold_t *txh, uint64_t off, uint64_t len)
 			}
 			unref += BP_GET_ASIZE(bp);
 		}
+		sgbuf_unmap(dbuf->db.db_data.zio_buf);
 		dbuf_rele(dbuf, FTAG);
 
 		++nl1blks;

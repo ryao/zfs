@@ -636,14 +636,14 @@ struct l2arc_buf_hdr {
 	uint32_t		b_hits;
 	uint64_t		b_asize;
 	/* temporary buffer holder for in-flight compressed data */
-	void			*b_tmp_cdata;
+	sgbuf_t			*b_tmp_cdata;
 };
 
 typedef struct l2arc_data_free {
 	/* protected by l2arc_free_on_write_mtx */
-	void		*l2df_data;
+	sgbuf_t		*l2df_data;
 	size_t		l2df_size;
-	void		(*l2df_func)(void *, size_t);
+	void		(*l2df_func)(sgbuf_t *, size_t);
 	list_node_t	l2df_list_node;
 } l2arc_data_free_t;
 
@@ -946,7 +946,8 @@ arc_cksum_verify(arc_buf_t *buf)
 		mutex_exit(&buf->b_hdr->b_freeze_lock);
 		return;
 	}
-	fletcher_2_native(buf->b_data, buf->b_hdr->b_size, &zc);
+	fletcher_2_native(sgbuf_map(buf->b_data), buf->b_hdr->b_size, &zc);
+	sgbuf_unmap(buf->b_data);
 	if (!ZIO_CHECKSUM_EQUAL(*buf->b_hdr->b_freeze_cksum, zc))
 		panic("buffer modified while frozen!");
 	mutex_exit(&buf->b_hdr->b_freeze_lock);
@@ -959,7 +960,8 @@ arc_cksum_equal(arc_buf_t *buf)
 	int equal;
 
 	mutex_enter(&buf->b_hdr->b_freeze_lock);
-	fletcher_2_native(buf->b_data, buf->b_hdr->b_size, &zc);
+	fletcher_2_native(sgbuf_map(buf->b_data), buf->b_hdr->b_size, &zc);
+	sgbuf_unmap(buf->b_data);
 	equal = ZIO_CHECKSUM_EQUAL(*buf->b_hdr->b_freeze_cksum, zc);
 	mutex_exit(&buf->b_hdr->b_freeze_lock);
 
@@ -979,8 +981,9 @@ arc_cksum_compute(arc_buf_t *buf, boolean_t force)
 	}
 	buf->b_hdr->b_freeze_cksum = kmem_alloc(sizeof (zio_cksum_t),
 	    KM_PUSHPAGE);
-	fletcher_2_native(buf->b_data, buf->b_hdr->b_size,
+	fletcher_2_native(sgbuf_map(buf->b_data), buf->b_hdr->b_size,
 	    buf->b_hdr->b_freeze_cksum);
+	sgbuf_unmap(buf->b_data);
 	mutex_exit(&buf->b_hdr->b_freeze_lock);
 	arc_buf_watch(buf);
 }
@@ -999,7 +1002,7 @@ arc_buf_unwatch(arc_buf_t *buf)
 {
 #ifndef _KERNEL
 	if (arc_watch) {
-		ASSERT0(mprotect(buf->b_data, buf->b_hdr->b_size,
+		ASSERT0(mprotect(sgbuf_map(buf->b_data), buf->b_hdr->b_size,
 		    PROT_READ | PROT_WRITE));
 	}
 #endif
@@ -1011,7 +1014,8 @@ arc_buf_watch(arc_buf_t *buf)
 {
 #ifndef _KERNEL
 	if (arc_watch)
-		ASSERT0(mprotect(buf->b_data, buf->b_hdr->b_size, PROT_READ));
+		ASSERT0(mprotect(sgbuf_map(buf->b_data), buf->b_hdr->b_size,
+		    PROT_READ));
 #endif
 }
 
@@ -1417,7 +1421,7 @@ arc_buf_clone(arc_buf_t *from)
 	buf->b_next = hdr->b_buf;
 	hdr->b_buf = buf;
 	arc_get_data_buf(buf);
-	bcopy(from->b_data, buf->b_data, size);
+	sgbuf_bcopy(from->b_data, buf->b_data, 0, 0, size);
 
 	/*
 	 * This buffer already exists in the arc so create a duplicate
@@ -1471,7 +1475,7 @@ arc_buf_add_ref(arc_buf_t *buf, void* tag)
  * the buffer is placed on l2arc_free_on_write to be freed later.
  */
 static void
-arc_buf_data_free(arc_buf_t *buf, void (*free_func)(void *, size_t))
+arc_buf_data_free(arc_buf_t *buf, void (*free_func)(sgbuf_t *, size_t))
 {
 	arc_buf_hdr_t *hdr = buf->b_hdr;
 
@@ -1780,7 +1784,7 @@ arc_buf_eviction_needed(arc_buf_t *buf)
  * it can't get a hash_lock on, and so may not catch all candidates.
  * It may also return without evicting as much space as requested.
  */
-static void *
+static sgbuf_t *
 arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
     arc_buf_contents_t type)
 {
@@ -1790,7 +1794,7 @@ arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
 	list_t *list = &state->arcs_list[type];
 	kmutex_t *hash_lock;
 	boolean_t have_lock;
-	void *stolen = NULL;
+	sgbuf_t *stolen = NULL;
 	arc_buf_hdr_t marker = {{{ 0 }}};
 	int count = 0;
 
@@ -2305,29 +2309,12 @@ arc_shrink(uint64_t bytes)
 static void
 arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 {
-	size_t			i;
-	kmem_cache_t		*prev_cache = NULL;
-	kmem_cache_t		*prev_data_cache = NULL;
-	extern kmem_cache_t	*zio_buf_cache[];
-	extern kmem_cache_t	*zio_data_buf_cache[];
-
 	/*
 	 * An aggressive reclamation will shrink the cache size as well as
 	 * reap free buffers from the arc kmem caches.
 	 */
 	if (strat == ARC_RECLAIM_AGGR)
 		arc_shrink(bytes);
-
-	for (i = 0; i < SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT; i++) {
-		if (zio_buf_cache[i] != prev_cache) {
-			prev_cache = zio_buf_cache[i];
-			kmem_cache_reap_now(zio_buf_cache[i]);
-		}
-		if (zio_data_buf_cache[i] != prev_data_cache) {
-			prev_data_cache = zio_data_buf_cache[i];
-			kmem_cache_reap_now(zio_data_buf_cache[i]);
-		}
-	}
 
 	kmem_cache_reap_now(buf_cache);
 	kmem_cache_reap_now(hdr_cache);
@@ -2926,7 +2913,7 @@ void
 arc_bcopy_func(zio_t *zio, arc_buf_t *buf, void *arg)
 {
 	if (zio == NULL || zio->io_error == 0)
-		bcopy(buf->b_data, arg, buf->b_hdr->b_size);
+		sgbuf_convert(arg, buf->b_data, TO_VOIDP, 0, 0, buf->b_hdr->b_size);
 	VERIFY(arc_buf_remove_ref(buf, arg));
 }
 
@@ -2992,12 +2979,14 @@ arc_read_done(zio_t *zio)
 	callback_list = hdr->b_acb;
 	ASSERT(callback_list != NULL);
 	if (BP_SHOULD_BYTESWAP(zio->io_bp) && zio->io_error == 0) {
-		dmu_object_byteswap_t bswap =
-		    DMU_OT_BYTESWAP(BP_GET_TYPE(zio->io_bp));
 		if (BP_GET_LEVEL(zio->io_bp) > 0)
-		    byteswap_uint64_array(buf->b_data, hdr->b_size);
-		else
-		    dmu_ot_byteswap[bswap].ob_func(buf->b_data, hdr->b_size);
+			sgbuf_bswap64(buf->b_data, 0, hdr->b_size);
+		else {
+			dmu_object_byteswap_t bswap =
+				DMU_OT_BYTESWAP(BP_GET_TYPE(zio->io_bp));
+			dmu_ot_byteswap[bswap].ob_func(sgbuf_map(buf->b_data), hdr->b_size);
+			sgbuf_unmap(buf->b_data);
+		}
 	}
 
 	arc_cksum_compute(buf, B_FALSE);
@@ -4882,7 +4871,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 	list_t *list;
 	uint64_t write_asize, write_psize, write_sz, headroom,
 	    buf_compress_minsz;
-	void *buf_data;
+	sgbuf_t *buf_data;
 	kmutex_t *list_lock = NULL;
 	boolean_t full;
 	l2arc_write_callback_t *cb;
@@ -5148,7 +5137,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 static boolean_t
 l2arc_compress_buf(l2arc_buf_hdr_t *l2hdr)
 {
-	void *cdata;
+	sgbuf_t *cdata;
 	size_t csize, len, rounded;
 
 	ASSERT(l2hdr->b_compress == ZIO_COMPRESS_OFF);
@@ -5157,11 +5146,11 @@ l2arc_compress_buf(l2arc_buf_hdr_t *l2hdr)
 	len = l2hdr->b_asize;
 	cdata = zio_data_buf_alloc(len);
 	csize = zio_compress_data(ZIO_COMPRESS_LZ4, l2hdr->b_tmp_cdata,
-	    cdata, l2hdr->b_asize);
+	    cdata, 0, 0, l2hdr->b_asize);
 
 	rounded = P2ROUNDUP(csize, (size_t)SPA_MINBLOCKSIZE);
 	if (rounded > csize) {
-		bzero((char *)cdata + csize, rounded - csize);
+		sgbuf_bzero(cdata, csize, rounded - csize);
 		csize = rounded;
 	}
 
@@ -5209,7 +5198,7 @@ static void
 l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 {
 	uint64_t csize;
-	void *cdata;
+	sgbuf_t *cdata;
 
 	ASSERT(L2ARC_IS_VALID_COMPRESS(c));
 
@@ -5229,7 +5218,7 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 		 * buffer's contents.
 		 */
 		ASSERT(hdr->b_buf != NULL);
-		bzero(hdr->b_buf->b_data, hdr->b_size);
+		sgbuf_bzero(hdr->b_buf->b_data, 0, hdr->b_size);
 		zio->io_data = zio->io_orig_data = hdr->b_buf->b_data;
 	} else {
 		ASSERT(zio->io_data != NULL);
@@ -5245,10 +5234,9 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 		 */
 		csize = zio->io_size;
 		cdata = zio_data_buf_alloc(csize);
-		bcopy(((char *)zio->io_data + zio->io_data_offset), cdata,
-		      csize);
-		if (zio_decompress_data(c, cdata, ((char *)zio->io_data + zio->io_data_offset), csize,
-		    hdr->b_size) != 0)
+		sgbuf_bcopy(zio->io_data, cdata, zio->io_data_offset, 0, csize);
+		if (zio_decompress_data(c, cdata, zio->io_data,
+		    0, zio->io_data_offset, csize, hdr->b_size) != 0)
 			zio->io_error = SET_ERROR(EIO);
 		zio_data_buf_free(cdata, csize);
 	}

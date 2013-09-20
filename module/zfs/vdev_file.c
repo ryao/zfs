@@ -152,9 +152,10 @@ vdev_file_io_strategy(void *arg)
 
 	zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
 	    UIO_READ : UIO_WRITE, vf->vf_vnode,
-				((char *)zio->io_data + zio->io_data_offset),
+	    SGBUF_MAP_OFFSET(zio->io_data, zio->io_data_offset, char),
 	    zio->io_size, zio->io_offset, UIO_SYSSPACE,
 	    0, RLIM64_INFINITY, kcred, &resid);
+	sgbuf_unmap(zio->io_data);
 
 	if (resid != 0 && zio->io_error == 0)
 		zio->io_error = SET_ERROR(ENOSPC);

@@ -312,23 +312,23 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 			arc_buf_t *buf = arc_buf_alloc(spa,
 			    sizeof (objset_phys_t), &os->os_phys_buf,
 			    ARC_BUFC_METADATA);
-			bzero(buf->b_data, sizeof (objset_phys_t));
-			bcopy(os->os_phys_buf->b_data, buf->b_data,
-			    arc_buf_size(os->os_phys_buf));
+			sgbuf_bzero(buf->b_data, 0, sizeof (objset_phys_t));
+			sgbuf_bcopy(os->os_phys_buf->b_data, buf->b_data,
+			    0, 0, arc_buf_size(os->os_phys_buf));
 			(void) arc_buf_remove_ref(os->os_phys_buf,
 			    &os->os_phys_buf);
 			os->os_phys_buf = buf;
 		}
 
-		os->os_phys = os->os_phys_buf->b_data;
+		os->os_phys = sgbuf_map(os->os_phys_buf->b_data);
 		os->os_flags = os->os_phys->os_flags;
 	} else {
 		int size = spa_version(spa) >= SPA_VERSION_USERSPACE ?
 		    sizeof (objset_phys_t) : OBJSET_OLD_PHYS_SIZE;
 		os->os_phys_buf = arc_buf_alloc(spa, size,
 		    &os->os_phys_buf, ARC_BUFC_METADATA);
-		os->os_phys = os->os_phys_buf->b_data;
-		bzero(os->os_phys, size);
+		os->os_phys = sgbuf_map(os->os_phys_buf->b_data);
+		sgbuf_bzero(os->os_phys_buf->b_data, 0, size);
 	}
 
 	/*
@@ -385,6 +385,7 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 			}
 		}
 		if (err != 0) {
+			sgbuf_unmap(os->os_phys_buf->b_data);
 			VERIFY(arc_buf_remove_ref(os->os_phys_buf,
 			    &os->os_phys_buf));
 			kmem_free(os, sizeof (objset_t));
@@ -666,6 +667,7 @@ dmu_objset_evict(objset_t *os)
 
 	ASSERT3P(list_head(&os->os_dnodes), ==, NULL);
 
+	sgbuf_unmap(os->os_phys_buf->b_data);
 	VERIFY(arc_buf_remove_ref(os->os_phys_buf, &os->os_phys_buf));
 
 	/*
@@ -1212,11 +1214,11 @@ dmu_objset_do_userquota_updates(objset_t *os, dmu_tx_t *tx)
  * be found then NULL is returned.  In the NULL case it is assumed
  * the uid/gid aren't changing.
  */
-static void *
+static sgbuf_t *
 dmu_objset_userquota_find_data(dmu_buf_impl_t *db, dmu_tx_t *tx)
 {
 	dbuf_dirty_record_t *dr, **drp;
-	void *data;
+	sgbuf_t *data;
 
 	if (db->db_dirtycnt == 0)
 		return (db->db.db_data.zio_buf);  /* Nothing is changing */
@@ -1250,6 +1252,7 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 {
 	objset_t *os = dn->dn_objset;
 	void *data = NULL;
+	boolean_t data_sgbuf = B_FALSE;
 	dmu_buf_impl_t *db = NULL;
 	uint64_t *user = NULL;
 	uint64_t *group = NULL;
@@ -1271,6 +1274,7 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 			db = dn->dn_bonus;
 			mutex_enter(&db->db_mtx);
 			data = dmu_objset_userquota_find_data(db, tx);
+			data_sgbuf = B_TRUE;
 		} else {
 			data = DN_BONUS(dn->dn_phys);
 		}
@@ -1286,6 +1290,7 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 			mutex_enter(&db->db_mtx);
 			data = (before) ? db->db.db_data.zio_buf :
 			    dmu_objset_userquota_find_data(db, tx);
+			data_sgbuf = B_TRUE;
 			have_spill = B_TRUE;
 	} else {
 		mutex_enter(&dn->dn_mtx);
@@ -1307,8 +1312,12 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 	 * Must always call the callback in case the object
 	 * type has changed and that type isn't an object type to track
 	 */
-	error = used_cbs[os->os_phys->os_type](dn->dn_bonustype, data,
+	error = used_cbs[os->os_phys->os_type](dn->dn_bonustype,
+	    (data_sgbuf) ? sgbuf_map(data) : data,
 	    user, group);
+
+	if (data_sgbuf)
+		sgbuf_unmap(data);
 
 	/*
 	 * Preserve existing uid/gid when the callback can't determine
