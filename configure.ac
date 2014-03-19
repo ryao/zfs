@@ -109,6 +109,7 @@ AC_CONFIG_FILES([
 	cmd/arcstat/Makefile
 	cmd/dbufstat/Makefile
 	cmd/zed/Makefile
+	cmd/drive_id/Makefile
 	module/Makefile
 	module/avl/Makefile
 	module/nvpair/Makefile
