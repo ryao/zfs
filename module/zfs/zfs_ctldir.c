@@ -685,23 +685,37 @@ zfsctl_snapdir_inactive(struct inode *ip)
 	mutex_exit(&zsb->z_ctldir_lock);
 }
 
+/*
+ * Attempt to unmount a snapshot by making a call to user space.
+ * There is no assurance that this can or will succeed, is just a
+ * best effort.  In the case where it does fail, perhaps because
+ * it's in use, the unmount will fail harmlessly.
+ */
+#define	SET_UNMOUNT_CMD \
+	"exec 0</dev/null " \
+	"     1>/dev/null " \
+	"     2>/dev/null; " \
+	"umount -t zfs -n %s'%s'"
+
 static int
 __zfsctl_unmount_snapshot(zfs_snapentry_t *sep, int flags)
 {
-	struct path path;
-	int lflags = LOOKUP_FOLLOW|LOOKUP_AUTOMOUNT;
-	int error = 0;
+	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
+	char *envp[] = { NULL };
+	int error;
 
-	/* XXX: Should LOOKUP_DIRECTORY be used here? */
-	kern_path_mountpoint(AT_FDCWD, sep->se_path, &path, lflags);
+	argv[2] = kmem_asprintf(SET_UNMOUNT_CMD,
+	    flags & MNT_FORCE ? "-f " : "", sep->se_path);
+	error = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+	strfree(argv[2]);
 
-	/* XXX: Is there a TOCTOU race between may_umount and kern_unmount? */
-	if (may_umount(path.mnt) == 0) {
-		error = EBUSY;
-		goto out;
-	}
-
-	kern_unmount(path.mnt);
+	/*
+	 * The umount system utility will return 256 on error.  We must
+	 * assume this error is because the file system is busy so it is
+	 * converted to the more sensible EBUSY.
+	 */
+	if (error)
+		error = SET_ERROR(EBUSY);
 
 	/*
 	 * This was the result of a manual unmount, cancel the delayed work
@@ -710,7 +724,7 @@ __zfsctl_unmount_snapshot(zfs_snapentry_t *sep, int flags)
 	if ((error == 0) && !(flags & MNT_EXPIRE))
 		taskq_cancel_id(zfs_expire_taskq, sep->se_taskqid);
 
-out:
+
 	return (error);
 }
 
