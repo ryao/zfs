@@ -1937,11 +1937,6 @@ zio_write_gang_block(zio_t *pio)
 	 */
 	pio->io_pipeline = ZIO_INTERLOCK_PIPELINE;
 
-	/*
-	 * We didn't allocate this bp, so make sure it doesn't get unmarked.
-	 */
-	pio->io_flags &= ~ZIO_FLAG_FASTWRITE;
-
 	zio_nowait(zio);
 
 	return (ZIO_PIPELINE_CONTINUE);
@@ -2410,7 +2405,6 @@ zio_dva_allocate(zio_t *zio)
 	flags |= (zio->io_flags & ZIO_FLAG_NODATA) ? METASLAB_GANG_AVOID : 0;
 	flags |= (zio->io_flags & ZIO_FLAG_GANG_CHILD) ?
 	    METASLAB_GANG_CHILD : 0;
-	flags |= (zio->io_flags & ZIO_FLAG_FASTWRITE) ? METASLAB_FASTWRITE : 0;
 	error = metaslab_alloc(spa, mc, zio->io_size, bp,
 	    zio->io_prop.zp_copies, zio->io_txg, NULL, flags);
 
@@ -2474,8 +2468,8 @@ zio_dva_unallocate(zio_t *zio, zio_gang_node_t *gn, blkptr_t *bp)
  * Try to allocate an intent log block.  Return 0 on success, errno on failure.
  */
 int
-zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, uint64_t size,
-    boolean_t use_slog)
+zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, blkptr_t *old_bp,
+    uint64_t size, boolean_t use_slog)
 {
 	int error = 1;
 
@@ -2488,14 +2482,14 @@ zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, uint64_t size,
 	 */
 	if (use_slog) {
 		error = metaslab_alloc(spa, spa_log_class(spa), size,
-		    new_bp, 1, txg, NULL,
-		    METASLAB_FASTWRITE | METASLAB_GANG_AVOID);
+		    new_bp, 1, txg, old_bp,
+		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
 	}
 
 	if (error) {
 		error = metaslab_alloc(spa, spa_normal_class(spa), size,
 		    new_bp, 1, txg, NULL,
-		    METASLAB_FASTWRITE);
+		    METASLAB_HINTBP_AVOID);
 	}
 
 	if (error == 0) {
@@ -3213,11 +3207,6 @@ zio_done(zio_t *zio)
 		zcr->zcr_next = NULL;
 		zcr->zcr_finish(zcr, NULL);
 		zfs_ereport_free_checksum(zcr);
-	}
-
-	if (zio->io_flags & ZIO_FLAG_FASTWRITE && zio->io_bp &&
-	    !BP_IS_HOLE(zio->io_bp) && !(zio->io_flags & ZIO_FLAG_NOPWRITE)) {
-		metaslab_fastwrite_unmark(zio->io_spa, zio->io_bp);
 	}
 
 	/*

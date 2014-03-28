@@ -196,7 +196,6 @@ enum zio_flag {
 	ZIO_FLAG_NOPWRITE	= 1 << 25,
 	ZIO_FLAG_REEXECUTED	= 1 << 26,
 	ZIO_FLAG_DELEGATED	= 1 << 27,
-	ZIO_FLAG_FASTWRITE	= 1 << 28
 };
 
 #define	ZIO_FLAG_MUSTSUCCEED		0
@@ -490,7 +489,7 @@ extern zio_t *zio_free_sync(zio_t *pio, spa_t *spa, uint64_t txg,
     const blkptr_t *bp, enum zio_flag flags);
 
 extern int zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp,
-    uint64_t size, boolean_t use_slog);
+    blkptr_t *old_bp, uint64_t size, boolean_t use_slog);
 extern void zio_free_zil(spa_t *spa, uint64_t txg, blkptr_t *bp);
 extern void zio_flush(zio_t *zio, vdev_t *vd);
 extern void zio_shrink(zio_t *zio, uint64_t size);
