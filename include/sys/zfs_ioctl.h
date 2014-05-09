@@ -251,8 +251,6 @@ typedef struct zinject_record {
 	uint32_t	zi_iotype;
 	int32_t		zi_duration;
 	uint64_t	zi_timer;
-	uint32_t	zi_cmd;
-	uint32_t	zi_pad;
 } zinject_record_t;
 
 #define	ZINJECT_NULL		0x1
@@ -265,16 +263,6 @@ typedef struct zinject_record {
 
 #define	ZEVENT_SEEK_START	0
 #define	ZEVENT_SEEK_END		UINT64_MAX
-
-typedef enum zinject_type {
-	ZINJECT_UNINITIALIZED,
-	ZINJECT_DATA_FAULT,
-	ZINJECT_DEVICE_FAULT,
-	ZINJECT_LABEL_FAULT,
-	ZINJECT_IGNORED_WRITES,
-	ZINJECT_PANIC,
-	ZINJECT_DELAY_IO,
-} zinject_type_t;
 
 typedef struct zfs_share {
 	uint64_t	z_exportdata;

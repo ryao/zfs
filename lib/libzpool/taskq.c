@@ -147,13 +147,6 @@ taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t tqflags)
 	return (1);
 }
 
-taskqid_t
-taskq_dispatch_delay(taskq_t *tq,  task_func_t func, void *arg, uint_t tqflags,
-    clock_t expire_time)
-{
-	return (0);
-}
-
 void
 taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
     taskq_ent_t *t)
@@ -329,12 +322,6 @@ taskq_member(taskq_t *tq, kthread_t *t)
 			return (1);
 
 	return (0);
-}
-
-int
-taskq_cancel_id(taskq_t *tq, taskqid_t id)
-{
-	return (ENOENT);
 }
 
 void
