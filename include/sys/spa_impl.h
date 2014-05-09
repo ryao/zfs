@@ -232,10 +232,6 @@ struct spa {
 	uint64_t	spa_feat_for_write_obj;	/* required to write to pool */
 	uint64_t	spa_feat_for_read_obj;	/* required to read from pool */
 	uint64_t	spa_feat_desc_obj;	/* Feature descriptions */
-	taskqid_t	spa_deadman_tqid;	/* Task id */
-	uint64_t	spa_deadman_calls;	/* number of deadman calls */
-	hrtime_t	spa_sync_starttime;	/* starting time of spa_sync */
-	uint64_t	spa_deadman_synctime;	/* deadman expiration timer */
 	uint64_t	spa_errata;		/* errata issues detected */
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
 
