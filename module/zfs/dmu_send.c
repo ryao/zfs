@@ -61,7 +61,6 @@ dump_bytes(dmu_sendarg_t *dsp, void *buf, int len)
 {
 	dsl_dataset_t *ds = dsp->dsa_os->os_dsl_dataset;
 	ssize_t resid; /* have to get resid to get detailed errno */
-	ASSERT0(dbi->dbi_len % 8);
 
 	fletcher_4_incremental_native(buf, len, &dsp->dsa_zc);
 	dsp->dsa_err = vn_rdwr(UIO_WRITE, dsp->dsa_vp,
