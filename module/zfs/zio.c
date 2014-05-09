@@ -646,7 +646,7 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 		zio_add_child(pio, zio);
 	}
 
-	taskq_init_ent(&zio->io_tqent);
+	bzero(&zio->io_tqent, sizeof(zio->io_tqent));
 
 	return (zio);
 }
@@ -1233,7 +1233,6 @@ zio_taskq_dispatch(zio_t *zio, zio_taskq_type_t q, boolean_t cutinline)
 	 * to a single taskq at a time.  It would be a grievous error
 	 * to dispatch the zio to another taskq at the same time.
 	 */
-	ASSERT(taskq_empty_ent(&zio->io_tqent));
 	spa_taskq_dispatch_ent(spa, t, q, (task_func_t *)zio_execute, zio,
 	    flags, &zio->io_tqent);
 }
@@ -3185,7 +3184,6 @@ zio_done(zio_t *zio)
 			 * Reexecution is potentially a huge amount of work.
 			 * Hand it off to the otherwise-unused claim taskq.
 			 */
-			ASSERT(taskq_empty_ent(&zio->io_tqent));
 			spa_taskq_dispatch_ent(zio->io_spa,
 			    ZIO_TYPE_CLAIM, ZIO_TASKQ_ISSUE,
 			    (task_func_t *)zio_reexecute, zio, 0,

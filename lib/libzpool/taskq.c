@@ -154,22 +154,6 @@ taskq_dispatch_delay(taskq_t *tq,  task_func_t func, void *arg, uint_t tqflags,
 	return (0);
 }
 
-int
-taskq_empty_ent(taskq_ent_t *t)
-{
-	return (t->tqent_next == NULL);
-}
-
-void
-taskq_init_ent(taskq_ent_t *t)
-{
-	t->tqent_next = NULL;
-	t->tqent_prev = NULL;
-	t->tqent_func = NULL;
-	t->tqent_arg = NULL;
-	t->tqent_flags = 0;
-}
-
 void
 taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
     taskq_ent_t *t)
