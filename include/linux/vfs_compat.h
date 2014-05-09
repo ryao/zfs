@@ -212,8 +212,8 @@ zpl_posix_acl_release(struct posix_acl *acl)
 		return;
 
 	if (atomic_dec_and_test(&acl->a_refcount)) {
-		taskq_dispatch_delay(system_taskq, zpl_posix_acl_free, acl,
-		    TQ_SLEEP, ddi_get_lbolt() + 60*HZ);
+		taskq_dispatch(system_taskq, zpl_posix_acl_free, acl,
+		    TQ_SLEEP);
 	}
 }
 
