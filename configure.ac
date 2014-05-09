@@ -112,6 +112,7 @@ AC_CONFIG_FILES([
 	module/Makefile
 	module/avl/Makefile
 	module/nvpair/Makefile
+	module/taskq/Makefile
 	module/unicode/Makefile
 	module/zcommon/Makefile
 	module/zfs/Makefile

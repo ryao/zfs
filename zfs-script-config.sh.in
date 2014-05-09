@@ -49,6 +49,7 @@ SPL_MODULES=(                                         \
 )
 
 ZFS_MODULES=(                                         \
+        ${MODDIR}/taskq/ztaskq.ko                     \
         ${MODDIR}/avl/zavl.ko                         \
         ${MODDIR}/nvpair/znvpair.ko                   \
         ${MODDIR}/unicode/zunicode.ko                 \
