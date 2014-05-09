@@ -1,5 +1,6 @@
 subdir-m += avl
 subdir-m += nvpair
+subdir-m += taskq
 subdir-m += unicode
 subdir-m += zcommon
 subdir-m += zfs
