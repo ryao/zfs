@@ -50,7 +50,7 @@ typedef struct {
 	char			*se_name;
 	char			*se_path;
 	struct inode		*se_inode;
-	taskqid_t		se_taskqid;
+	struct delayed_work	se_work;
 	avl_node_t		se_node;
 } zfs_snapentry_t;
 

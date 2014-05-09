@@ -92,11 +92,6 @@
  */
 int zfs_expire_snapshot = ZFSCTL_EXPIRE_SNAPSHOT;
 
-/*
- * Dedicated task queue for unmounting snapshots.
- */
-static taskq_t *zfs_expire_taskq;
-
 static zfs_snapentry_t *
 zfsctl_sep_alloc(void)
 {
@@ -119,15 +114,16 @@ zfsctl_sep_free(zfs_snapentry_t *sep)
 static void
 zfsctl_expire_snapshot(void *data)
 {
-	zfs_snapentry_t *sep = (zfs_snapentry_t *)data;
-	zfs_sb_t *zsb = ITOZSB(sep->se_inode);
+	zfs_snapentry_t *sep;
+	zfs_sb_t *zsb;
 	int error;
+
+	sep = spl_get_work_data(data, zfs_snapentry_t, se_work.work);
+	zsb = ITOZSB(sep->se_inode);
 
 	error = zfsctl_unmount_snapshot(zsb, sep->se_name, MNT_EXPIRE);
 	if (error == EBUSY)
-		sep->se_taskqid = taskq_dispatch_delay(zfs_expire_taskq,
-		    zfsctl_expire_snapshot, sep, TQ_SLEEP,
-		    ddi_get_lbolt() + zfs_expire_snapshot * HZ);
+		schedule_delayed_work(&sep->se_work, zfs_expire_snapshot * HZ);
 }
 
 int
@@ -675,7 +671,7 @@ zfsctl_snapdir_inactive(struct inode *ip)
 
 		if (sep->se_inode == ip) {
 			avl_remove(&zsb->z_ctldir_snaps, sep);
-			taskq_cancel_id(zfs_expire_taskq, sep->se_taskqid);
+			cancel_delayed_work_sync(&sep->se_work);
 			zfsctl_sep_free(sep);
 			break;
 		}
@@ -722,8 +718,7 @@ __zfsctl_unmount_snapshot(zfs_snapentry_t *sep, int flags)
 	 * to prevent zfsctl_expire_snapshot() from attempting a unmount.
 	 */
 	if ((error == 0) && !(flags & MNT_EXPIRE))
-		taskq_cancel_id(zfs_expire_taskq, sep->se_taskqid);
-
+		cancel_delayed_work(&sep->se_work);
 
 	return (error);
 }
@@ -868,7 +863,7 @@ zfsctl_mount_snapshot(struct path *path, int flags)
 	sep = avl_find(&zsb->z_ctldir_snaps, &search, NULL);
 	if (sep) {
 		avl_remove(&zsb->z_ctldir_snaps, sep);
-		taskq_cancel_id(zfs_expire_taskq, sep->se_taskqid);
+		cancel_delayed_work_sync(&sep->se_work);
 		zfsctl_sep_free(sep);
 	}
 
@@ -878,9 +873,8 @@ zfsctl_mount_snapshot(struct path *path, int flags)
 	sep->se_inode = ip;
 	avl_add(&zsb->z_ctldir_snaps, sep);
 
-	sep->se_taskqid = taskq_dispatch_delay(zfs_expire_taskq,
-	    zfsctl_expire_snapshot, sep, TQ_SLEEP,
-	    ddi_get_lbolt() + zfs_expire_snapshot * HZ);
+        spl_init_delayed_work(&sep->se_work, zfsctl_expire_snapshot, sep);
+	schedule_delayed_work(&sep->se_work, zfs_expire_snapshot * HZ);
 
 	mutex_exit(&zsb->z_ctldir_lock);
 error:
@@ -1009,8 +1003,6 @@ zfsctl_shares_lookup(struct inode *dip, char *name, struct inode **ipp,
 void
 zfsctl_init(void)
 {
-	zfs_expire_taskq = taskq_create("z_unmount", 1, maxclsyspri,
-	    1, 8, TASKQ_PREPOPULATE);
 }
 
 /*
@@ -1020,7 +1012,6 @@ zfsctl_init(void)
 void
 zfsctl_fini(void)
 {
-	taskq_destroy(zfs_expire_taskq);
 }
 
 module_param(zfs_expire_snapshot, int, 0644);
