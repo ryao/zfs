@@ -4037,8 +4037,17 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 #endif
 
 #ifdef _KERNEL
-	if (error == 0)
-		zvol_create_minors(tofs);
+	if (error == 0) {
+		objset_t *os;
+		boolean_t iszvol;
+
+		dmu_objset_hold(tofs, FTAG, &os);
+		iszvol = (dmu_objset_type(os) == DMU_OST_ZVOL);
+		dmu_objset_rele(os, FTAG);
+
+		if (iszvol)
+			zvol_create_minors(tofs);
+	}
 #endif
 
 	/*
