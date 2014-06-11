@@ -189,7 +189,7 @@ vdev_file_io_start(zio_t *zio)
 	}
 
 	VERIFY3U(taskq_dispatch(system_taskq, vdev_file_io_strategy, zio,
-	    TQ_PUSHPAGE), !=, 0);
+	    TQ_SLEEP), !=, 0);
 
 	return (ZIO_PIPELINE_STOP);
 }
