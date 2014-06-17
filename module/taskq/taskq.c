@@ -1483,6 +1483,9 @@ taskq_thread_create(taskq_t *tq)
 		t = thread_create(NULL, 0, taskq_thread, tq, 0, &p0, TS_RUN,
 		    tq->tq_pri);
 	}
+#elif __linux__
+	t = __thread_create(NULL, 0, (thread_func_t) taskq_thread,
+	    tq->tq_name, tq, 0, &p0, TS_RUN, tq->tq_pri);
 #else
 	t = thread_create(NULL, 0, taskq_thread, tq, 0, &p0, TS_RUN,
 	    tq->tq_pri);
@@ -2243,8 +2246,14 @@ taskq_bucket_extend(void *arg)
 	 * Create a thread in a TS_STOPPED state first. If it is successfully
 	 * created, place the entry on the free list and start the thread.
 	 */
+#if __linux__
+	tqe->tqent_thread = __thread_create(NULL, 0,
+	    (thread_func_t) taskq_d_thread,
+	    tq->tq_name, tqe, 0, &p0, TS_STOPPED, tq->tq_pri);
+#else
 	tqe->tqent_thread = thread_create(NULL, 0, taskq_d_thread, tqe,
 	    0, &p0, TS_STOPPED, tq->tq_pri);
+#endif /* __sun__ */
 
 	/*
 	 * Once the entry is ready, link it to the the bucket free list.
