@@ -1552,10 +1552,12 @@ taskq_thread(void *arg)
 
 	if (tq->tq_flags & TASKQ_CPR_SAFE) {
 		CALLB_CPR_INIT_SAFE(curthread, tq->tq_name);
-	} else {
-		CALLB_CPR_INIT(&cprinfo, &tq->tq_lock, callb_generic_cpr,
-		    tq->tq_name);
 	}
+
+	/* Always initialize cprinfo to silence GCC warning */
+	CALLB_CPR_INIT(&cprinfo, &tq->tq_lock, callb_generic_cpr,
+	    tq->tq_name);
+
 	mutex_enter(&tq->tq_lock);
 	thread_id = ++tq->tq_nthreads;
 	ASSERT(tq->tq_flags & TASKQ_THREAD_CREATED);
