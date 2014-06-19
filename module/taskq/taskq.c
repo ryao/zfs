@@ -1525,6 +1525,11 @@ taskq_thread_wait(taskq_t *tq, kmutex_t *mx, kcondvar_t *cv,
 {
 	clock_t ret = 0;
 
+#ifdef __linux__
+	int flags = current->flags;
+	current->flags |= PF_FREEZER_SKIP;
+#endif
+
 	if (!(tq->tq_flags & TASKQ_CPR_SAFE)) {
 		CALLB_CPR_SAFE_BEGIN(cprinfo);
 	}
@@ -1536,6 +1541,12 @@ taskq_thread_wait(taskq_t *tq, kmutex_t *mx, kcondvar_t *cv,
 	if (!(tq->tq_flags & TASKQ_CPR_SAFE)) {
 		CALLB_CPR_SAFE_END(cprinfo, mx);
 	}
+
+#ifdef __linux__
+	current->flags = (current->flags & ~PF_FREEZER_SKIP) |
+		(flags & PF_FREEZER_SKIP);
+#endif
+
 
 	return (ret);
 }
