@@ -444,6 +444,10 @@ struct zio {
 
 	/* Taskq dispatching state */
 	taskq_ent_t	io_tqent;
+
+#if defined(_KERNEL) && defined(__linux__)
+	struct work_struct	io_work;
+#endif
 };
 
 extern zio_t *zio_null(zio_t *pio, spa_t *spa, vdev_t *vd,

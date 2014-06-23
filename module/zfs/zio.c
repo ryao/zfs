@@ -93,6 +93,11 @@ int zio_buf_debug_limit = 0;
 
 static inline void __zio_execute(zio_t *zio);
 
+
+#if defined(_KERNEL) && defined(__linux__)
+static void zio_interrupt_wq_cb(void *data);
+#endif
+
 static int
 zio_cons(void *arg, void *unused, int kmflag)
 {
@@ -107,6 +112,10 @@ zio_cons(void *arg, void *unused, int kmflag)
 	    offsetof(zio_link_t, zl_parent_node));
 	list_create(&zio->io_child_list, sizeof (zio_link_t),
 	    offsetof(zio_link_t, zl_child_node));
+
+#if defined(_KERNEL) && defined(__linux__)
+	spl_init_work(&zio->io_work, zio_interrupt_wq_cb, arg);
+#endif
 
 	return (0);
 }
@@ -1265,11 +1274,26 @@ zio_issue_async(zio_t *zio)
 	return (ZIO_PIPELINE_STOP);
 }
 
+#if defined(_KERNEL) && defined(__linux__)
+/* Bottom Half Function */
+static void
+zio_interrupt_wq_cb(void *data)
+{
+	zio_t *zio = spl_get_work_data(data, zio_t, io_work);
+	zio_taskq_dispatch(zio, ZIO_TASKQ_INTERRUPT, B_FALSE);
+}
+void
+zio_interrupt(zio_t *zio)
+{
+	schedule_work(&zio->io_work);
+}
+#else
 void
 zio_interrupt(zio_t *zio)
 {
 	zio_taskq_dispatch(zio, ZIO_TASKQ_INTERRUPT, B_FALSE);
 }
+#endif
 
 /*
  * Execute the I/O pipeline until one of the following occurs:
