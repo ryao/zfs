@@ -589,6 +589,14 @@ int taskq_search_depth = TASKQ_SEARCH_DEPTH;
  */
 #define CPU	raw_smp_processor_id()
 
+/*
+ * We must switch from cv_wait() to the SPL's cv_wait_interruptible() so that
+ * the scheduler's accounting does not consider time idle to contribute to the
+ * system load.
+ */
+#undef cv_wait
+#define cv_wait	cv_wait_interruptible
+
 /* Part of string.c */
 extern void strident_canon(char *s, size_t n);
 #endif /* __linux__ */
