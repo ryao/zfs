@@ -661,14 +661,22 @@ vdev_disk_io_start(zio_t *zio)
 {
 	vdev_t *v = zio->io_vd;
 	vdev_disk_t *vd = v->vdev_tsd;
-	int flags, error;
+	int flags, error, ret = ZIO_PIPELINE_STOP;
+#ifdef HAVE_CURRENT_BIO_TAIL
+	struct bio **bio_tail = current->bio_tail;
+	current->bio_tail = NULL;
+#else
+	struct bio_list *bio_list = current->bio_list;
+	current->bio_list = NULL;
+#endif
 
 	switch (zio->io_type) {
 	case ZIO_TYPE_IOCTL:
 
 		if (!vdev_readable(v)) {
 			zio->io_error = SET_ERROR(ENXIO);
-			return (ZIO_PIPELINE_CONTINUE);
+			ret = ZIO_PIPELINE_CONTINUE;
+			goto out;
 		}
 
 		switch (zio->io_cmd) {
@@ -684,7 +692,7 @@ vdev_disk_io_start(zio_t *zio)
 
 			error = vdev_disk_io_flush(vd->vd_bdev, zio);
 			if (error == 0)
-				return (ZIO_PIPELINE_STOP);
+				goto out;
 
 			zio->io_error = error;
 			if (error == ENOTSUP)
@@ -696,7 +704,8 @@ vdev_disk_io_start(zio_t *zio)
 			zio->io_error = SET_ERROR(ENOTSUP);
 		}
 
-		return (ZIO_PIPELINE_CONTINUE);
+		ret = ZIO_PIPELINE_CONTINUE;
+		goto out;
 
 	case ZIO_TYPE_WRITE:
 		flags = WRITE;
@@ -708,17 +717,25 @@ vdev_disk_io_start(zio_t *zio)
 
 	default:
 		zio->io_error = SET_ERROR(ENOTSUP);
-		return (ZIO_PIPELINE_CONTINUE);
+		ret = ZIO_PIPELINE_CONTINUE;
+		goto out;
 	}
 
 	error = __vdev_disk_physio(vd->vd_bdev, zio, zio->io_data,
 	    zio->io_size, zio->io_offset, flags);
 	if (error) {
 		zio->io_error = error;
-		return (ZIO_PIPELINE_CONTINUE);
+		ret = ZIO_PIPELINE_CONTINUE;
+		goto out;
 	}
 
-	return (ZIO_PIPELINE_STOP);
+out:
+#ifdef HAVE_CURRENT_BIO_TAIL
+	current->bio_tail = bio_tail;
+#else
+	current->bio_list = bio_list;
+#endif
+	return (ret);
 }
 
 static void
