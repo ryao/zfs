@@ -579,14 +579,14 @@ zvol_write(struct bio *bio)
 	int error = 0;
 	dmu_tx_t *tx;
 	rl_t *rl;
+	fstrans_cookie_t cookie;
 
 	/*
 	 * Annotate this call path with a flag that indicates that it is
 	 * unsafe to use KM_SLEEP during memory allocations due to the
 	 * potential for a deadlock.  KM_PUSHPAGE should be used instead.
 	 */
-	ASSERT(!(current->flags & PF_NOFS));
-	current->flags |= PF_NOFS;
+	cookie = spl_fstrans_mark();
 
 	if (bio->bi_rw & VDEV_REQ_FLUSH)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
@@ -623,7 +623,7 @@ zvol_write(struct bio *bio)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 
 out:
-	current->flags &= ~PF_NOFS;
+	spl_fstrans_unmark(cookie);
 	return (error);
 }
 
@@ -637,14 +637,14 @@ zvol_discard(struct bio *bio)
 	uint64_t end = start + size;
 	int error = 0;
 	rl_t *rl;
+	fstrans_cookie_t cookie;
 
 	/*
 	 * Annotate this call path with a flag that indicates that it is
 	 * unsafe to use KM_SLEEP during memory allocations due to the
 	 * potential for a deadlock.  KM_PUSHPAGE should be used instead.
 	 */
-	ASSERT(!(current->flags & PF_NOFS));
-	current->flags |= PF_NOFS;
+	cookie = spl_fstrans_mark();
 
 	if (end > zv->zv_volsize) {
 		error = SET_ERROR(EIO);
@@ -674,7 +674,7 @@ zvol_discard(struct bio *bio)
 	zfs_range_unlock(rl);
 
 out:
-	current->flags &= ~PF_NOFS;
+	spl_fstrans_unmark(cookie);
 	return (error);
 
 }

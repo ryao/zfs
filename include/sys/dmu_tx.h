@@ -85,6 +85,9 @@ struct dmu_tx {
 	refcount_t tx_space_written;
 	refcount_t tx_space_freed;
 #endif
+#ifdef _KERNEL
+	fstrans_cookie_t tx_cookie;
+#endif
 };
 
 enum dmu_tx_hold_type {
