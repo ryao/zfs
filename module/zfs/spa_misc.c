@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2014 by Zettabyte Software LLC. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -50,6 +51,7 @@
 #include <sys/arc.h>
 #include <sys/ddt.h>
 #include <sys/kstat.h>
+#include <sys/processor.h>
 #include "zfs_prop.h"
 #include "zfeature_common.h"
 
@@ -263,6 +265,8 @@ int zfs_deadman_enabled = 1;
  *     (VDEV_RAIDZ_MAXPARITY + 1) * SPA_DVAS_PER_BP * 2 == 24
  */
 int spa_asize_inflation = 24;
+
+uint64_t *spa_random_entropy = NULL;
 
 /*
  * ==========================================================================
@@ -1226,14 +1230,57 @@ spa_strfree(char *s)
 	kmem_free(s, strlen(s) + 1);
 }
 
+/*
+ * Xorshift Pseudo Random Number Generator based on work by Sebastiano Vigna
+ * "An experimental exploration of Marsaglia's xorshift generators, scrambled"
+ * http://arxiv.org/pdf/1402.6246v2.pdf
+ *
+ * spa_get_random() is intended to provide 64-bit random numbers in the range
+ * [0, range) to allow us to make random decisons such as which DVA to use when
+ * we have multiple copies. This does not require cryptographically secure
+ * random numbers, so we implement a fast PRNG that we seed using
+ * random_get_pseudo_bytes().
+ *
+ * We provide each CPU with an independent seed so that all calls to
+ * random_get_pseudo_bytes() are free of atomic instructions.  We disable
+ * preemption when calculating a new seed so that the scheduler does not
+ * reschedule us to another CPU, which would cause multiple processors to see
+ * the same numbers.
+ *
+ * A consequence of using a fast PRNG is that using spa_get_random() to
+ * generate words larger than 64-bit bits will paradoxically produce to `2^64 -
+ * 1` possibilities. This is because we have a sequence of `2^64 - 1` 64-bit
+ * words and selecting the first will implicitly select the second. If a caller
+ * finds this behavior undesireable, random_get_pseudo_bytes() should be used
+ * instead.
+ *
+ * XXX: Interrupt handlers that trigger within the critical section where we
+ * have preemption disabled will have the same number before (r % range) and
+ * afterward in some cases.  Nothing in the code currently calls this in an
+ * interrupt handler, so this should be okay. If that becomes a problem, we
+ * could create a second set of variables for use inside interrupt handlers.
+ */
+
 uint64_t
 spa_get_random(uint64_t range)
 {
 	uint64_t r;
+	processorid_t p;
 
 	ASSERT(range != 0);
 
-	(void) random_get_pseudo_bytes((void *)&r, sizeof (uint64_t));
+	kpreempt_disable();
+	p = getcpuid();
+	r = spa_random_entropy[p];
+
+	r ^= r >> 12;
+	r ^= r << 25;
+	r ^= r >> 27;
+
+	spa_random_entropy[p] = r;
+	kpreempt_enable();
+
+	r *= 2685821657736338717ULL;
 
 	return (r % range);
 }
@@ -1241,14 +1288,18 @@ spa_get_random(uint64_t range)
 uint64_t
 spa_generate_guid(spa_t *spa)
 {
-	uint64_t guid = spa_get_random(-1ULL);
+	uint64_t guid;
+
+	(void) random_get_pseudo_bytes((void *)&guid, sizeof (guid));
 
 	if (spa != NULL) {
 		while (guid == 0 || spa_guid_exists(spa_guid(spa), guid))
-			guid = spa_get_random(-1ULL);
+			(void) random_get_pseudo_bytes((void *)&guid,
+			    sizeof (guid));
 	} else {
 		while (guid == 0 || spa_guid_exists(guid, 0))
-			guid = spa_get_random(-1ULL);
+			(void) random_get_pseudo_bytes((void *)&guid,
+			    sizeof (guid));
 	}
 
 	return (guid);
@@ -1617,6 +1668,37 @@ spa_boot_init(void)
 }
 
 void
+spa_random_init(void)
+{
+	int i;
+	size_t len = max_ncpus * sizeof (uint64_t);
+
+	ASSERT(spa_random_entropy == NULL);
+
+	spa_random_entropy = kmem_alloc(len, KM_SLEEP);
+	random_get_pseudo_bytes((uint8_t *)spa_random_entropy, len);
+
+	/* Xorshift PRNGs cannot handle zero */
+	for (i = 0; i < max_ncpus; i++) {
+		if (spa_random_entropy[i] == 0) {
+			spa_random_entropy[i] = ~0 - i;
+			cmn_err(CE_WARN, "ZFS: random_get_pseudo_bytes() "
+			    "returned 0 when generating random seed for CPU "
+			    "%d. Setting initial seed to %llx.", i, ~0 - i);
+		}
+	}
+}
+
+void
+spa_random_fini(void)
+{
+	size_t len = max_ncpus * sizeof (uint64_t);
+	ASSERT(spa_random_entropy);
+
+	kmem_free(spa_random_entropy, len);
+	spa_random_entropy = NULL;
+}
+void
 spa_init(int mode)
 {
 	mutex_init(&spa_namespace_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -1652,6 +1734,7 @@ spa_init(int mode)
 	}
 #endif
 
+	spa_random_init();
 	fm_init();
 	refcount_init();
 	unique_init();
@@ -1686,6 +1769,7 @@ spa_fini(void)
 	unique_fini();
 	refcount_fini();
 	fm_fini();
+	spa_random_fini();
 
 	avl_destroy(&spa_namespace_avl);
 	avl_destroy(&spa_spare_avl);
