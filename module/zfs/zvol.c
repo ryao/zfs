@@ -711,7 +711,7 @@ zvol_read(struct bio *bio)
 	return (error);
 }
 
-static void
+static MAKE_REQUEST_FN_RET
 zvol_request(struct request_queue *q, struct bio *bio)
 {
 	zvol_state_t *zv = q->queuedata;
@@ -751,6 +751,9 @@ zvol_request(struct request_queue *q, struct bio *bio)
 
 out:
 	bio_endio(bio, -error);
+#ifdef HAVE_MAKE_REQUEST_FN_RET_INT
+	return 0;
+#endif
 }
 
 static void
