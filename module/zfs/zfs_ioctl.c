@@ -5120,7 +5120,7 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 }
 
 
-static zfs_ioc_vec_t zfs_ioc_vec[ZFS_IOC_LAST - ZFS_IOC_FIRST];
+zfs_ioc_vec_t *zfs_ioc_vec = NULL;
 
 static void
 zfs_ioctl_register_legacy(zfs_ioc_t ioc, zfs_ioc_legacy_func_t *func,
@@ -5228,6 +5228,9 @@ zfs_ioctl_register_dataset_modify(zfs_ioc_t ioc, zfs_ioc_legacy_func_t *func,
 static void
 zfs_ioctl_init(void)
 {
+	zfs_ioc_vec = kmem_zalloc(sizeof (zfs_ioc_vec_t) *
+	    (ZFS_IOC_LAST - ZFS_IOC_FIRST), KM_SLEEP);
+
 	zfs_ioctl_register("snapshot", ZFS_IOC_SNAPSHOT,
 	    zfs_ioc_snapshot, zfs_secpolicy_snapshot, POOL_NAME,
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE, B_TRUE);
@@ -5417,6 +5420,14 @@ zfs_ioctl_init(void)
 	    zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
 	zfs_ioctl_register_legacy(ZFS_IOC_EVENTS_SEEK, zfs_ioc_events_seek,
 	    zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+}
+
+static void
+zfs_ioctl_fini(void)
+{
+
+	kmem_free(zfs_ioc_vec, sizeof (zfs_ioc_vec_t) *
+	    (ZFS_IOC_LAST - ZFS_IOC_FIRST));
 }
 
 int
@@ -5609,7 +5620,7 @@ zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 	nvlist_t *innvl = NULL;
 
 	vecnum = cmd - ZFS_IOC_FIRST;
-	if (vecnum >= sizeof (zfs_ioc_vec) / sizeof (zfs_ioc_vec[0]))
+	if (vecnum >= ZFS_IOC_LAST - ZFS_IOC_FIRST)
 		return (-SET_ERROR(EINVAL));
 	vec = &zfs_ioc_vec[vecnum];
 
@@ -5874,6 +5885,7 @@ _fini(void)
 {
 	zfs_detach();
 	zvol_fini();
+	zfs_ioctl_fini();
 	zfs_fini();
 	spa_fini();
 
