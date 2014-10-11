@@ -148,6 +148,7 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func,
 	kthread_t *kt;
 	pthread_attr_t attr;
 	char *stkstr;
+	char short_name[16];
 
 	ASSERT0(state & ~TS_RUN);
 
@@ -183,7 +184,8 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func,
 	VERIFY0(pthread_create(&kt->t_tid, &attr, &zk_thread_helper, kt));
 	VERIFY0(pthread_attr_destroy(&attr));
 
-	VERIFY0(pthread_setname_np(kt->t_tid, name));
+	(void) snprintf(short_name, sizeof(short_name), "%s", name);
+	VERIFY0(pthread_setname_np(kt->t_tid, short_name));
 
 	return (kt);
 }
