@@ -141,8 +141,9 @@ zk_thread_helper(void *arg)
 }
 
 kthread_t *
-zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
-    size_t len, proc_t *pp, int state, pri_t pri, int detachstate)
+zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func,
+    const char *name, void *arg, size_t len, proc_t *pp, int state,
+    pri_t pri, int detachstate)
 {
 	kthread_t *kt;
 	pthread_attr_t attr;
@@ -181,6 +182,8 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 
 	VERIFY0(pthread_create(&kt->t_tid, &attr, &zk_thread_helper, kt));
 	VERIFY0(pthread_attr_destroy(&attr));
+
+	VERIFY0(pthread_setname_np(kt->t_tid, name));
 
 	return (kt);
 }
