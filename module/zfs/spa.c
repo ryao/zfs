@@ -460,6 +460,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 		case ZPOOL_PROP_AUTOREPLACE:
 		case ZPOOL_PROP_LISTSNAPS:
 		case ZPOOL_PROP_AUTOEXPAND:
+			error = nvpair_value_string(elem, &strval);
+			if (error == 0) {
+				error = zpool_prop_string_to_index(prop,
+				    strval, &intval);
+				if (!error && intval > 1)
+					error = SET_ERROR(EINVAL);
+				break;
+			}
 			error = nvpair_value_uint64(elem, &intval);
 			if (!error && intval > 1)
 				error = SET_ERROR(EINVAL);
@@ -6204,6 +6212,12 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			proptype = zpool_prop_get_type(prop);
 
 			if (nvpair_type(elem) == DATA_TYPE_STRING) {
+				if (proptype == PROP_TYPE_INDEX) {
+					strval = fnvpair_value_string(elem);
+					VERIFY0(zpool_prop_string_to_index(prop,
+					    strval, &intval));
+					goto setint;
+				}
 				ASSERT(proptype == PROP_TYPE_STRING);
 				strval = fnvpair_value_string(elem);
 				VERIFY0(zap_update(mos,
@@ -6219,6 +6233,7 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 					VERIFY0(zpool_prop_index_to_string(
 					    prop, intval, &unused));
 				}
+setint:
 				VERIFY0(zap_update(mos,
 				    spa->spa_pool_props_object, propname,
 				    8, 1, &intval, tx));

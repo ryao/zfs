@@ -1762,11 +1762,17 @@ getprop_uint64(zfs_handle_t *zhp, zfs_prop_t prop, char **source)
 {
 	nvlist_t *nv;
 	uint64_t value;
+	char *strval = NULL;
 
 	*source = NULL;
 	if (nvlist_lookup_nvlist(zhp->zfs_props,
 	    zfs_prop_to_name(prop), &nv) == 0) {
-		verify(nvlist_lookup_uint64(nv, ZPROP_VALUE, &value) == 0);
+		if ((zfs_prop_get_type(prop) == PROP_TYPE_INDEX) &&
+		    nvlist_lookup_string(nv, ZPROP_VALUE, &strval) == 0) {
+			zprop_string_to_index(prop, strval, &value,
+			    ZFS_TYPE_DATASET);
+		} else
+			VERIFY0(nvlist_lookup_uint64(nv, ZPROP_VALUE, &value));
 		(void) nvlist_lookup_string(nv, ZPROP_SOURCE, source);
 	} else {
 		verify(!zhp->zfs_props_table ||
