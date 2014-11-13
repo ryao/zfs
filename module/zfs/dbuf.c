@@ -2962,4 +2962,5 @@ EXPORT_SYMBOL(dmu_buf_set_user_ie);
 EXPORT_SYMBOL(dmu_buf_update_user);
 EXPORT_SYMBOL(dmu_buf_get_user);
 EXPORT_SYMBOL(dmu_buf_freeable);
+EXPORT_SYMBOL(dmu_buf_get_blkptr);
 #endif
