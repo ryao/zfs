@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2013, Richard Yao. All rights reserved.
+ * Copyright (c) 2015, ClusterHQ LLC. All rights reserved.
  */
 
 #ifndef _SGBUF_H
@@ -35,13 +35,12 @@
 #include <sys/types.h>
 
 typedef struct sgbuf {
-	struct page **pages;
-	void * addr;
-	int count;
 #ifdef DEBUG
 	uint32_t magic;
 #endif
-
+	int count;
+	void *addr;
+	struct page *pages[0];
 } sgbuf_t;
 
 typedef enum sgbuf_convert {
@@ -63,23 +62,25 @@ typedef int sgbuf_callback_func_t(uint64_t, void *, void *);
 int sgbuf_init(void);
 int sgbuf_fini(void);
 
-sgbuf_t *sgbuf_alloc(int size, int flags);
-sgbuf_t *sgbuf_zalloc(int size, int flags);
-void sgbuf_free(sgbuf_t *buf);
+sgbuf_t *sgbuf_alloc(size_t size, int flags);
+sgbuf_t *sgbuf_zalloc(size_t size, int flags);
+void sgbuf_free(sgbuf_t *buf, size_t size);
 
 /* XXX: These will be removed */
-#ifdef _KERNEL
+#define SGBUF_MAP_OFFSET(buf, offset, offtype) (((offtype *)sgbuf_map((buf))) + (offset))
+#define sgbuf_map_peek(buf) ((buf)->addr)
 void *sgbuf_map (sgbuf_t *buf);
 void sgbuf_unmap (sgbuf_t *buf);
-#endif
 
-int sgbuf_bcmp(sgbuf_t *s1, sgbuf_t *s2, size_t size);
-void sgbuf_bcopy(const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2, size_t size);
-void sgbuf_bzero(sgbuf_t *s1, size_t offset, size_t len);
+int sgbuf_bcmp(const sgbuf_t *s1, const sgbuf_t *s2, size_t off1, size_t off2,
+    size_t size);
+void sgbuf_bcopy(const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2,
+    size_t size);
+void sgbuf_bzero(sgbuf_t *buf, size_t offset, size_t len);
 
-void sgbuf_bswap16(sgbuf_t *s1, size_t offset, size_t len);
-void sgbuf_bswap32(sgbuf_t *s1, size_t offset, size_t len);
-void sgbuf_bswap64(sgbuf_t *s1, size_t offset, size_t len);
+void sgbuf_bswap16(sgbuf_t *buf, size_t offset, size_t len);
+void sgbuf_bswap32(sgbuf_t *buf, size_t offset, size_t len);
+void sgbuf_bswap64(sgbuf_t *buf, size_t offset, size_t len);
 
 /* XXX: Find a way to enable compiler optimizations when doing multiple calls in a loop */
 uint16_t sgbuf_getu16(sgbuf_t *buf, size_t index);
@@ -95,5 +96,6 @@ void sgbuf_convert(void *s1, sgbuf_t *s2, sgbuf_convert_t rw,
 	size_t off1, size_t off2, size_t n);
 int sgbuf_eval(sgbuf_t *buf, sgbuf_callback_func_t func,
 	uint32_t chunk_size, uint32_t count, void *data);
+int sgbuf_iszero(sgbuf_t *buf, size_t offset, size_t len);
 
 #endif	/* _SGBUF_H */

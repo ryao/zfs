@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2013, Richard Yao. All rights reserved.
+ * Copyright (c) 2015, ClusterHQ LLC. All rights reserved.
  */
 
 /*
@@ -90,11 +90,12 @@ typedef struct free_page {
 #define SGBUF_PAGE_INDEX(n) ((n) >> PAGE_SHIFT)
 #define SGBUF_PAGE_OFFSET(n) (P2PHASE((n), PAGE_SIZE))
 
-static kmem_cache_t *sgbuf_cache;
-
+#ifdef _KERNEL
 /* Variables for managing free page pool */
 static list_t sg_buf_page_free_list;
+#if 0
 static volatile unsigned long sg_buf_page_free_count = 0;
+#endif
 static unsigned long sg_buf_page_free_max = 64;
 static kmutex_t sg_buf_alloc_lock;
 
@@ -107,6 +108,7 @@ sgbuf_page_alloc(int flags)
 	 * port to use the Solaris bits and then modify this to check for
 	 * KM_SLEEP correctly.
 	 * */
+#if 0
 	if ((flags & KM_SLEEP) == KM_SLEEP)
 		return native_alloc_page(flags);
 
@@ -127,13 +129,14 @@ sgbuf_page_alloc(int flags)
 		ASSERT(list_is_empty(&sg_buf_page_free_list));
 		mutex_exit(&sg_buf_alloc_lock);
 	}
-
+#endif
 	return native_alloc_page(flags);
 }
 
 static void
 sgbuf_page_free(struct page *page)
 {
+#if 0
 	if (sg_buf_page_free_count < sg_buf_page_free_max) {
 		mutex_enter(&sg_buf_alloc_lock);
 
@@ -158,74 +161,66 @@ sgbuf_page_free(struct page *page)
 
 		mutex_exit(&sg_buf_alloc_lock);
 	}
+#endif
 
 	native_free_page(page);
 }
-
-static void
-sgbuf_dest(void *arg, void *unused)
-{
-	int i;
-	sgbuf_t *buf = (sgbuf_t*)arg;
-
-#ifdef _KERNEL
-	if (buf->addr)
-		sgbuf_unmap(buf);
 #endif
-
-	for ( i = 0 ; i < buf->count ; i++ )
-		sgbuf_page_free(buf->pages[i]);
-
-	kmem_free(buf->pages, buf->count * sizeof(struct page*));
-
-	buf->addr = NULL;
-	buf->count = 0;
-}
 
 int
 sgbuf_init(void)
 {
-	sgbuf_cache = kmem_cache_create("sgbuf_cache", sizeof (sgbuf_t), 0, NULL, sgbuf_dest, NULL, NULL, NULL, KMC_KMEM);
 
+#ifdef _KERNEL
 	/* XXX: SPL Mutex implements MUTEX_SPIN as MUTEX_DEFAULT */
 	mutex_init(&sg_buf_alloc_lock, NULL, MUTEX_SPIN, NULL);
 	list_create(&sg_buf_page_free_list, sizeof (free_page_t),
 		offsetof(free_page_t, free_list));
-	return sgbuf_cache == 0;
+#endif
+	return (0);
 }
 
 int
 sgbuf_fini(void)
 {
+
+#ifdef _KERNEL
 	while (!list_is_empty(&sg_buf_page_free_list))
 		native_free_page(list_remove_head(&sg_buf_page_free_list));
 	list_destroy(&sg_buf_page_free_list);
 	mutex_destroy(&sg_buf_alloc_lock);
+#endif
 
-	kmem_cache_destroy(sgbuf_cache);
-
-	return 0;
+	return (0);
 }
 
 sgbuf_t *
-sgbuf_alloc(int size, int flags)
+sgbuf_alloc(size_t size, int flags)
 {
 	int i;
-	sgbuf_t *buf = kmem_cache_alloc(sgbuf_cache, flags);
+	int count;
+	sgbuf_t *buf;
 
-	buf->count = P2ROUNDUP(size, PAGE_SIZE) >> PAGE_SHIFT;
-	buf->pages = kmem_alloc(sizeof(struct pages*) * buf->count,
-		flags | KM_NODEBUG);
-	if (buf->pages == NULL) {
-		buf->count = 0;
+	if (size == 0)
 		return NULL;
-	}
+
+	count = P2ROUNDUP(size, PAGE_SIZE) >> PAGE_SHIFT;
+	buf = kmem_alloc(sizeof(struct page *) * count + sizeof(sgbuf_t),
+		flags | KM_NODEBUG);
+	buf->count = count;
+
+#ifdef _KERNEL
+	buf->addr = NULL;
 
 	/* XXX: alloc_page() can fail */
 	for ( i = 0 ; i < buf->count ; i++ )
 		buf->pages[i] = sgbuf_page_alloc(flags);
+#else
+	posix_memalign(&buf->addr, PAGE_SIZE, SGBUF_SIZE(buf));
 
-	buf->addr = NULL;
+	for ( i = 0 ; i < buf->count ; i++ )
+		buf->pages[i] = (void *)((char *)buf->addr + PAGE_SIZE * i);
+#endif
 
 #ifdef DEBUG
 	buf->magic = SGBUF_MAGIC;
@@ -235,7 +230,7 @@ sgbuf_alloc(int size, int flags)
 }
 
 sgbuf_t *
-sgbuf_zalloc(int size, int flags)
+sgbuf_zalloc(size_t size, int flags)
 {
 	sgbuf_t *ret = sgbuf_alloc(size, flags);
 	sgbuf_bzero(ret, 0, SGBUF_SIZE(ret));
@@ -243,33 +238,179 @@ sgbuf_zalloc(int size, int flags)
 }
 
 void
-sgbuf_free(sgbuf_t *buf)
+sgbuf_free(sgbuf_t *buf, size_t size)
 {
+#ifdef _KERNEL
+	int i;
+#endif
 	ASSERT_SGBUF(buf);
-	kmem_cache_free(sgbuf_cache, buf);
+	ASSERT3U(buf->count, ==, (P2ROUNDUP(size, PAGE_SIZE) >> PAGE_SHIFT));
+#ifdef _KERNEL
+	if (buf->addr)
+		sgbuf_unmap(buf);
+
+	for ( i = 0 ; i < buf->count ; i++ )
+		sgbuf_page_free(buf->pages[i]);
+#else
+	kmem_free(buf->addr, SGBUF_SIZE(buf));
+#endif
+	kmem_free(buf, sizeof(struct page *) * buf->count + sizeof(sgbuf_t));
 }
 
-#ifdef _KERNEL
 void *
 sgbuf_map(sgbuf_t *buf)
 {
-	ASSERT_SGBUF(buf);
-	if (buf->addr)
-		return buf->addr;
+	if (buf == NULL)
+		return NULL;
 
-	return buf->addr = vm_map_ram(buf->pages, buf->count, NUMA_NO_NODE, PAGE_KERNEL);
+	ASSERT_SGBUF(buf);
+
+#ifdef _KERNEL
+	if (buf->addr == NULL)
+		buf->addr = vm_map_ram(buf->pages, buf->count, NUMA_NO_NODE,
+		    PAGE_KERNEL);
+#endif
+
+	return (buf->addr);
 }
 
 void
 sgbuf_unmap(sgbuf_t * buf)
 {
 	ASSERT_SGBUF(buf);
-	if (buf->addr)
-		vm_unmap_ram(buf->addr, buf->count);
-
-	buf->addr = NULL;
+	return;
 }
-#endif
+
+typedef int(*sgbuf_1arg_f)(void *buf, size_t n, void *data);
+typedef int(*sgbuf_2arg_f)(void *s1, void *s2, size_t n, void *data);
+
+/*
+ * Internal function for implementing operations on contiguous regions of
+ * sgbufs with page alignment. Examples include bswap and iszero.
+ */
+FORCE_INLINE void
+sgbuf_generic_1arg(sgbuf_1arg_f func, void *data,
+    const sgbuf_t *buf, size_t off, size_t size)
+{
+	int i = off >> PAGE_SHIFT;
+	void *p;
+	int tocmp = 0;
+
+	ASSERT_SGBUF(buf);
+	ASSERT(off + size <= SGBUF_SIZE(buf));
+
+	off = P2PHASE(off, PAGE_SIZE);
+
+	tocmp = PAGE_SIZE - off;
+	tocmp = MIN(tocmp, size);
+
+	while (size) {
+		p = native_page_map(buf->pages[i]);
+
+		if (func(p + off, tocmp, data))
+			break;
+
+		native_page_unmap(buf->pages[i]);
+		i++;
+
+		size -= tocmp;
+		tocmp = MIN(size, PAGE_SIZE);
+		off = 0;
+	}
+}
+
+/*
+ * Internal function for implementing operations on contiguous regions of
+ * sgbufs or void pointers with page alignment. Examples include bcmp, bcopy
+ * and conversions.
+ */
+FORCE_INLINE void
+sgbuf_2arg_generic(sgbuf_2arg_f func, void *data, void *s1, void *s2,
+    size_t off1, size_t off2, int type1, int type2, size_t size)
+{
+	int i = off1 >> PAGE_SHIFT, j = off2 >> PAGE_SHIFT;
+	void *p1 = NULL, *p2 = NULL;
+	int tocmp = 0;
+
+	ASSERT(s1 != s2);
+	if (type1) {
+		ASSERT_SGBUF((sgbuf_t *)s1);
+		ASSERT(off1 + size <= SGBUF_SIZE((sgbuf_t *)s1));
+	} else {
+		ASSERT(s1);
+	}
+
+	if (type2) {
+		ASSERT_SGBUF((sgbuf_t *)s2);
+		ASSERT(off2 + size <= SGBUF_SIZE((sgbuf_t *)s2));
+	} else {
+		ASSERT(s2);
+	}
+
+	while (size) {
+		if (type1)
+			p1 = (p1) ? p1 :
+			    native_page_map(((sgbuf_t*)s1)->pages[i]);
+		else
+			p1 = s1 + PAGE_SIZE * i;
+
+		if (type2)
+			p2 = (p2) ? p2 :
+			    native_page_map(((sgbuf_t*)s2)->pages[j]);
+		else
+			p2 = s2 + PAGE_SIZE * j;
+
+		off1 = P2PHASE(off1 + tocmp, PAGE_SIZE);
+		off2 = P2PHASE(off2 + tocmp, PAGE_SIZE);
+
+		tocmp = PAGE_SIZE - MAX(off1, off2);
+		tocmp = MIN(tocmp, size);
+
+		if (func(p1 + off1, p2 + off2, tocmp, data))
+			break;
+
+		if (off2 <= off1) {
+			if (type1) {
+				native_page_unmap(((sgbuf_t *)s1)->pages[i]);
+				p1 = NULL;
+			}
+			i++;
+		}
+
+		if (off1 <= off2) {
+			if (type2) {
+				native_page_unmap(((sgbuf_t *)s2)->pages[j]);
+				p2 = NULL;
+			}
+			j++;
+		}
+
+		size -= tocmp;
+	}
+}
+
+FORCE_INLINE void
+sgbuf_generic_2arg(sgbuf_2arg_f func, void *data,
+    const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2, size_t size)
+{
+	sgbuf_2arg_generic(func, data, (sgbuf_t *)s1, s2, off1, off2, 1, 1,
+	    size);
+}
+
+/* Internal callback function for implementing sgbuf_bcmp() */
+FORCE_INLINE int
+sgbuf_bcmp_cb(void *p1, void *p2, size_t n, void *data)
+{
+	int err = bcmp(p1, p2, n);
+
+	if (err) {
+		int *t = data;
+		*t = err;
+		return (err);
+	}
+
+	return (0);
+}
 
 /*
  * sgbuf_bcmp(): sgbuf_t version of bcmp().
@@ -277,144 +418,41 @@ sgbuf_unmap(sgbuf_t * buf)
  * This is functionally identical to bcmp(). The only real difference is the
  * inclusion of assertions to check that valid buffers have been passed.
  */
-
 int
-sgbuf_bcmp(sgbuf_t *s1, sgbuf_t *s2, size_t size)
+sgbuf_bcmp(const sgbuf_t *s1, const sgbuf_t *s2, size_t off1, size_t off2, size_t size)
 {
-	int i, ret;
+	int r = 0;
+	sgbuf_generic_2arg(&sgbuf_bcmp_cb, &r, (sgbuf_t *)s1, (sgbuf_t *)s2, off1, off2, size);
+	return (r);
+}
 
-	ASSERT_SGBUF(s1);
-	ASSERT_SGBUF(s2);
-	ASSERT(size <= SGBUF_SIZE(s1));
-	ASSERT(size <= SGBUF_SIZE(s2));
-
-
-	for ( i = 0 ; size >= PAGE_SIZE; size -= PAGE_SIZE, i++ ) {
-		void *p1 = native_page_map(s1->pages[i]);
-		void *p2 = native_page_map(s2->pages[i]);
-
-		ret = bcmp(p1, p2, PAGE_SIZE);
-
-		native_page_unmap(s1->pages[i]);
-		native_page_unmap(s2->pages[i]);
-
-		if (ret)
-			return ret;
-	}
-
-	if (size) {
-		void *p1 = native_page_map(s1->pages[i]);
-		void *p2 = native_page_map(s2->pages[i]);
-
-		ret = bcmp(p1, p2, size);
-
-		native_page_unmap(s1->pages[i]);
-		native_page_unmap(s2->pages[i]);
-	}
-
-	return ret;
+/* Internal callback function for implementing sgbuf_bcopy() */
+FORCE_INLINE int
+sgbuf_bcopy_cb(void *p1, void *p2, size_t n, void *data)
+{
+	memcpy(p2, p1, n);
+	return (0);
 }
 
 /*
- * Internal sgbuf_bcopy() implementation that handles copies with page alignment
- */
-
-FORCE_INLINE void
-sgbuf_bcopy_aligned(const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2, size_t size)
-{
-
-	int i = off1 >> PAGE_SHIFT, j = off2 >> PAGE_SHIFT;
-
-	/* XXX: We could subsitute COW for memcpy() */
-	for (  ; size >= PAGE_SIZE; size -= PAGE_SIZE, i++, j++ ) {
-		void *p1 = native_page_map(s1->pages[i]);
-		void *p2 = native_page_map(s2->pages[j]);
-
-		memcpy(p2, p1, PAGE_SIZE);
-
-		native_page_unmap(s1->pages[i]);
-		native_page_unmap(s2->pages[j]);
-	}
-
-	if (size) {
-		void *p1 = native_page_map(s1->pages[i]);
-		void *p2 = native_page_map(s2->pages[j]);
-
-		memcpy(p2, p1, size);
-
-		native_page_unmap(s1->pages[i]);
-		native_page_unmap(s2->pages[j]);
-	}
-
-
-}
-
-/*
- * Internal sgbuf_bcopy implementation that handles copies without page alignment
- */
-
-FORCE_INLINE void
-sgbuf_bcopy_unaligned(const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2, size_t size)
-{
-
-	int i = off1 >> PAGE_SHIFT, j = off2 >> PAGE_SHIFT;
-	void *p1 = NULL, *p2 = NULL;
-	int tocopy = 0;
-
-	while (size) {
-		p1 = (p1) ? p1 : native_page_map(s1->pages[i]);
-		p2 = (p2) ? p2 : native_page_map(s2->pages[j]);
-
-		off1 = P2PHASE(off1 + tocopy, PAGE_SIZE);
-		off2 = P2PHASE(off2 + tocopy, PAGE_SIZE);
-
-		tocopy = PAGE_SIZE - MAX(off1, off2);
-		tocopy = MIN(tocopy, size);
-
-		memcpy(p2 + off2, p1 + off1, tocopy);
-
-		if (off1 <= off2) {
-			native_page_unmap(s1->pages[i]);
-			p1 = NULL;
-			i++;
-		}
-
-		if (off1 <= off2) {
-			native_page_unmap(s2->pages[j]);
-			p2 = NULL;
-			j++;
-		}
-
-		size -= tocopy;
-	}
-
-	if (p1)
-		native_page_unmap(s1->pages[i]);
-	if (p2)
-		native_page_unmap(s2->pages[j]);
-
-}
-
-/*
- * sgbuf_bcopy(): sgbuf_t version of bcopy().
+ * sgbuf_bcmp(): sgbuf_t version of bcopy().
  *
- * This is similar to bcopy(), except it takes sgbuf_t pointers and an
- * additional offset argument. The offset argument is permits translation of
- * bcopy(src + offset, dest, size) into sgbuf_bcopy(src, dest offset, size).
+ * This is functionally identical to bcopy(). The only real difference is the
+ * inclusion of assertions to check that valid buffers have been passed.
  */
-
 void
 sgbuf_bcopy(const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2, size_t size)
 {
-	ASSERT_SGBUF(s1);
-	ASSERT_SGBUF(s2);
-	ASSERT(off1 + size <= SGBUF_SIZE(s1));
-	ASSERT(off2 + size <= SGBUF_SIZE(s2));
+	/* XXX: We could subsitute COW for memcpy() when pages are aligned */
+	sgbuf_generic_2arg(&sgbuf_bcopy_cb, NULL, (sgbuf_t *)s1, s2, off1, off2, size);
+}
 
-	if (((P2PHASE(off1, PAGE_SIZE)) == 0) && ((P2PHASE(off2, PAGE_SIZE)) == 0))
-		sgbuf_bcopy_aligned(s1, s2, off1, off2, size);
-	else
-		sgbuf_bcopy_unaligned(s1, s2, off1, off2, size);
+/* Internal callback function for implementing sgbuf_bzero() */
+FORCE_INLINE int
+sgbuf_bzero_cb(void *p, size_t n, void *data)
+{
+	bzero(p, n);
+	return (0);
 }
 
 /*
@@ -426,216 +464,176 @@ sgbuf_bcopy(const sgbuf_t *s1, sgbuf_t *s2, size_t off1, size_t off2, size_t siz
  * Note: Linux does expensive native_page_map()/native_page_unmap() calls whenever a high memory page
  * is touched. These involve page table manipulation.
  */
-
 void
-sgbuf_bzero(sgbuf_t *buf, size_t offset, size_t len) {
-	size_t i = offset >> PAGE_SHIFT;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(offset + len <= SGBUF_SIZE(buf));
-
-	offset = P2PHASE(offset, PAGE_SIZE);
-
-	/* Handle partial page at beginning */
-	if (offset) {
-		void *p = native_page_map(buf->pages[i]);
-		bzero(p + offset, MIN(PAGE_SIZE - offset, len));
-		native_page_unmap(buf->pages[i++]);
-		len -= PAGE_SIZE - offset;
-	}
-
-	/* XXX: We could do page table manipulation to use CoW */
-	for (  ; len > PAGE_SIZE ; i++, len -= PAGE_SIZE ) {
-		void *p = native_page_map(buf->pages[i]);
-		bzero(p, PAGE_SIZE);
-		native_page_unmap(buf->pages[i]);
-	}
-
-	/* Handle partial page at end */
-	if (len > 0) {
-		void *p = native_page_map(buf->pages[i]);
-		bzero(p, len);
-		native_page_unmap(buf->pages[i]);
-	}
-
+sgbuf_bzero(sgbuf_t *buf, size_t offset, size_t size)
+{
+	/* XXX: We could subsitute COW for memcpy() when pages are aligned */
+	sgbuf_generic_1arg(&sgbuf_bzero_cb, NULL, buf, offset, size);
 }
-void
-sgbuf_bswap16(sgbuf_t *buf, size_t offset, size_t len) {
-	size_t i = offset >> PAGE_SHIFT;
 
-	ASSERT_SGBUF(buf);
-	ASSERT(offset + len <= SGBUF_SIZE(buf));
+FORCE_INLINE int
+sgbuf_bswap16_cb(void *p, size_t n, void *data)
+{
+	uint16_t *val = p;
+
+	while ( n > 0 ) {
+		val[0] = BSWAP_16(val[0]);
+		val++;
+		n -= sizeof(uint16_t);
+	}
+
+	return (0);
+}
+
+void
+sgbuf_bswap16(sgbuf_t *buf, size_t offset, size_t size)
+{
 	ASSERT(ISP2(offset) && offset >= sizeof(uint16_t));
-	ASSERT(ISP2(len) && len >= sizeof(uint16_t));
+	ASSERT(ISP2(offset) && offset >= sizeof(uint16_t));
+	sgbuf_generic_1arg(&sgbuf_bswap16_cb, NULL, buf, offset, size);
+}
 
-	offset = P2PHASE(offset, PAGE_SIZE);
+FORCE_INLINE int
+sgbuf_bswap32_cb(void *p, size_t n, void *data)
+{
+	uint32_t *val = p;
 
-	while (len > 0) {
-		uint16_t *p = native_page_map(buf->pages[i]);
-		int amount = MIN(PAGE_SIZE - offset, len);
-		int j = amount / sizeof(uint16_t);
-		while (j-- > 0) {
-			p[j] = BSWAP_16(p[j]);
-		}
-		native_page_unmap(buf->pages[i++]);
-		len -= amount;
-		offset = 0;
+	while ( n > 0 ) {
+		val[0] = BSWAP_32(val[0]);
+		val++;
+		n -= sizeof(uint32_t);
 	}
 
+	return (0);
 }
 
 void
-sgbuf_bswap32(sgbuf_t *buf, size_t offset, size_t len) {
-	size_t i = offset >> PAGE_SHIFT;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(offset + len <= SGBUF_SIZE(buf));
+sgbuf_bswap32(sgbuf_t *buf, size_t offset, size_t size)
+{
 	ASSERT(ISP2(offset) && offset >= sizeof(uint32_t));
-	ASSERT(ISP2(len) && len >= sizeof(uint32_t));
+	ASSERT(ISP2(offset) && offset >= sizeof(uint32_t));
+	sgbuf_generic_1arg(&sgbuf_bswap32_cb, NULL, buf, offset, size);
+}
 
-	offset = P2PHASE(offset, PAGE_SIZE);
+FORCE_INLINE int
+sgbuf_bswap64_cb(void *p, size_t n, void *data)
+{
+	uint64_t *val = p;
 
-	while (len > 0) {
-		uint32_t *p = native_page_map(buf->pages[i]);
-		int amount = MIN(PAGE_SIZE - offset, len);
-		int j = amount / sizeof(uint32_t);
-		while (j-- > 0) {
-			p[j] = BSWAP_32(p[j]);
-		}
-		native_page_unmap(buf->pages[i++]);
-		len -= amount;
-		offset = 0;
+	while ( n > 0 ) {
+		val[0] = BSWAP_64(val[0]);
+		val++;
+		n -= sizeof(uint64_t);
 	}
 
+	return (0);
 }
 
 void
-sgbuf_bswap64(sgbuf_t *buf, size_t offset, size_t len) {
-	size_t i = offset >> PAGE_SHIFT;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(offset + len <= SGBUF_SIZE(buf));
+sgbuf_bswap64(sgbuf_t *buf, size_t offset, size_t size)
+{
 	ASSERT(ISP2(offset) && offset >= sizeof(uint64_t));
-	ASSERT(ISP2(len) && len >= sizeof(uint64_t));
-
-	offset = P2PHASE(offset, PAGE_SIZE);
-
-	while (len > 0) {
-		uint64_t *p = native_page_map(buf->pages[i]);
-		int amount = MIN(PAGE_SIZE - offset, len);
-		int j = amount / sizeof(uint64_t);
-		while (j-- > 0) {
-			p[j] = BSWAP_64(p[j]);
-		}
-		native_page_unmap(buf->pages[i++]);
-		len -= amount;
-		offset = 0;
-	}
-
-}
-uint16_t sgbuf_getu16(sgbuf_t *buf, size_t index) {
-	size_t bytes = index * sizeof(uint16_t);
-	struct page *page;
-	void *p;
-	uint16_t ret;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(bytes <= SGBUF_SIZE(buf));
-
-	page = SGBUF_PAGE(buf, SGBUF_PAGE_INDEX(bytes));
-
-	p = native_page_map(page);
-	ret = ((uint16_t *)p)[SGBUF_PAGE_OFFSET(bytes) / sizeof(uint16_t)];
-	native_page_unmap(page);
-
-	return ret;
+	ASSERT(ISP2(offset) && offset >= sizeof(uint64_t));
+	sgbuf_generic_1arg(&sgbuf_bswap64_cb, NULL, buf, offset, size);
 }
 
-uint32_t sgbuf_getu32(sgbuf_t *buf, size_t index) {
-	size_t bytes = index * sizeof(uint32_t);
-	struct page *page;
-	void *p;
-	uint32_t ret;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(bytes <= SGBUF_SIZE(buf));
-
-	page = SGBUF_PAGE(buf, SGBUF_PAGE_INDEX(bytes));
-
-	p = native_page_map(page);
-	ret = ((uint32_t *)p)[SGBUF_PAGE_OFFSET(bytes) / sizeof(uint32_t)];
-	native_page_unmap(page);
-
-	return ret;
+FORCE_INLINE int
+sgbuf_getu16_cb(void *p, size_t n, void *data)
+{
+	*(uint16_t*)data = *(uint16_t*)p;
+	return (0);
 }
 
-uint64_t sgbuf_getu64(sgbuf_t *buf, size_t index) {
-	size_t bytes = index * sizeof(uint64_t);
-	struct page *page;
-	void *p;
-	uint64_t ret;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(bytes <= SGBUF_SIZE(buf));
-
-	page = SGBUF_PAGE(buf, SGBUF_PAGE_INDEX(bytes));
-
-	p = native_page_map(page);
-	ret = ((uint64_t *)p)[SGBUF_PAGE_OFFSET(bytes) / sizeof(uint64_t)];
-	native_page_unmap(page);
-
-	return ret;
+uint16_t
+sgbuf_getu16(sgbuf_t *buf, size_t index)
+{
+	uint16_t r;
+	sgbuf_generic_1arg(&sgbuf_getu16_cb, &r, buf, index * sizeof(uint16_t),
+	    sizeof(uint16_t));
+	return (r);
 }
 
-void sgbuf_setu16(sgbuf_t *buf, size_t index, uint16_t val) {
-	size_t bytes = index * sizeof(uint16_t);
-	struct page *page;
-	void *p;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(bytes <= SGBUF_SIZE(buf));
-
-	page = SGBUF_PAGE(buf, SGBUF_PAGE_INDEX(bytes));
-
-	p = native_page_map(page);
-	((uint16_t *)p)[SGBUF_PAGE_OFFSET(bytes) / sizeof(uint16_t)] = val;
-	native_page_unmap(page);
+FORCE_INLINE int
+sgbuf_getu32_cb(void *p, size_t n, void *data)
+{
+	*(uint32_t*)data = *(uint32_t*)p;
+	return (0);
 }
 
-void sgbuf_setu32(sgbuf_t *buf, size_t index, uint32_t val) {
-	size_t bytes = index * sizeof(uint32_t);
-	struct page *page;
-	void *p;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(bytes <= SGBUF_SIZE(buf));
-
-	page = SGBUF_PAGE(buf, SGBUF_PAGE_INDEX(bytes));
-
-	p = native_page_map(page);
-	((uint32_t *)p)[SGBUF_PAGE_OFFSET(bytes) / sizeof(uint32_t)] = val;
-	native_page_unmap(page);
+uint32_t
+sgbuf_getu32(sgbuf_t *buf, size_t index)
+{
+	uint32_t r;
+	sgbuf_generic_1arg(&sgbuf_getu32_cb, &r, buf, index * sizeof(uint32_t),
+	    sizeof(uint32_t));
+	return (r);
 }
 
-void sgbuf_setu64(sgbuf_t *buf, size_t index, uint64_t val) {
-	size_t bytes = index * sizeof(uint64_t);
-	struct page *page;
-	void *p;
-
-	ASSERT_SGBUF(buf);
-	ASSERT(bytes <= SGBUF_SIZE(buf));
-
-	page = SGBUF_PAGE(buf, SGBUF_PAGE_INDEX(bytes));
-
-	p = native_page_map(page);
-	((uint64_t *)p)[SGBUF_PAGE_OFFSET(bytes) / sizeof(uint64_t)] = val;
-	native_page_unmap(page);
+FORCE_INLINE int
+sgbuf_getu64_cb(void *p, size_t n, void *data)
+{
+	*(uint64_t*)data = *(uint64_t*)p;
+	return (0);
 }
+
+uint64_t
+sgbuf_getu64(sgbuf_t *buf, size_t index)
+{
+	uint64_t r;
+	sgbuf_generic_1arg(&sgbuf_getu64_cb, &r, buf, index * sizeof(uint64_t),
+	    sizeof(uint64_t));
+	return (r);
+}
+
+FORCE_INLINE int
+sgbuf_setu16_cb(void *p, size_t n, void *data)
+{
+	*(uint16_t*)p = *(uint16_t*)data;
+	return (0);
+}
+
+void
+sgbuf_setu16(sgbuf_t *buf, size_t index, uint16_t val)
+{
+	sgbuf_generic_1arg(&sgbuf_setu16_cb, &val, buf, index * sizeof(uint16_t),
+	    sizeof(uint16_t));
+}
+
+FORCE_INLINE int
+sgbuf_setu32_cb(void *p, size_t n, void *data)
+{
+	*(uint32_t*)p = *(uint32_t*)data;
+	return (0);
+}
+
+void
+sgbuf_setu32(sgbuf_t *buf, size_t index, uint32_t val)
+{
+	sgbuf_generic_1arg(&sgbuf_setu32_cb, &val, buf, index * sizeof(uint32_t),
+	    sizeof(uint32_t));
+}
+
+FORCE_INLINE int
+sgbuf_setu64_cb(void *p, size_t n, void *data)
+{
+	*(uint64_t*)p = *(uint64_t*)data;
+	return (0);
+}
+
+void
+sgbuf_setu64(sgbuf_t *buf, size_t index, uint64_t val)
+{
+	sgbuf_generic_1arg(&sgbuf_setu64_cb, &val, buf, index * sizeof(uint64_t),
+	    sizeof(uint64_t));
+}
+
 /*
  * Function to clone a sgbuf_t.
  *
  * Upon success, the return value will contain a pointer to a new sgbuf_t whose
  * contents are identical to those of the original.
+ *
+ * XXX: There is an opportunity to use CoW on the pages.
  */
 
 sgbuf_t *
@@ -645,7 +643,7 @@ sgbuf_dup(sgbuf_t *orig, int flags)
 	sgbuf_t *copy;
 	int size;
 
-	ASSERT(orig);
+	ASSERT_SGBUF(orig);
 
 	size = SGBUF_SIZE(orig);
 	copy = sgbuf_alloc(size, flags);
@@ -659,131 +657,51 @@ sgbuf_dup(sgbuf_t *orig, int flags)
 
 }
 
-FORCE_INLINE void
-convert_to_sgbuf(void *s1, sgbuf_t *s2, size_t offset, size_t n)
-{
-	int i = SGBUF_PAGE_INDEX(offset);
-
-	if ((offset = SGBUF_PAGE_OFFSET(offset))) {
-		void *p2 = native_page_map(s2->pages[i]);
-		memcpy(p2 + offset, s1, PAGE_SIZE - offset);
-		native_page_unmap(s2->pages[i]);
-		i++;
-		n -= PAGE_SIZE - offset;
-		s1 += PAGE_SIZE - offset;
-	}
-
-	for (  ; n > PAGE_SIZE ; i++, n -= PAGE_SIZE, s1 += PAGE_SIZE ) {
-		void *p2 = native_page_map(s2->pages[i]);
-		memcpy(p2, s1, PAGE_SIZE);
-		native_page_unmap(s2->pages[i]);
-	}
-
-	if (n > 0) {
-		void *p2 = native_page_map(s2->pages[i]);
-		memcpy(p2, s1, n);
-		native_page_unmap(s2->pages[i]);
-	}
-}
-
-FORCE_INLINE void
-convert_to_void(void *s1, sgbuf_t *s2, size_t offset, size_t n)
-{
-	int i = SGBUF_PAGE_INDEX(offset);
-
-	if ((offset = SGBUF_PAGE_OFFSET(offset))) {
-		void *p2 = native_page_map(s2->pages[i]);
-		memcpy(s1, p2 + offset, PAGE_SIZE - offset);
-		native_page_unmap(s2->pages[i]);
-		i++;
-		n -= PAGE_SIZE - offset;
-		s1 += PAGE_SIZE - offset;
-	}
-
-	for (  ; n > PAGE_SIZE ; i++, n -= PAGE_SIZE, s1 += PAGE_SIZE ) {
-		void *p2 = native_page_map(s2->pages[i]);
-		memcpy(s1, p2, PAGE_SIZE);
-		native_page_unmap(s2->pages[i]);
-	}
-
-	if (n > 0) {
-		void *p2 = native_page_map(s2->pages[i]);
-		memcpy(s1, p2, n);
-		native_page_unmap(s2->pages[i]);
-	}
-}
-
 void
-sgbuf_convert(void *s1, sgbuf_t *s2, sgbuf_convert_t rw, size_t off1, size_t off2, size_t n)
+sgbuf_convert(void *s1, sgbuf_t *s2, sgbuf_convert_t rw,
+    size_t off1, size_t off2, size_t size)
 {
-	ASSERT(s1);
-	ASSERT_SGBUF(s2);
-	ASSERT(SGBUF_SIZE(s2) >= n + off2);
-
 	switch (rw) {
 		case TO_SGBUF:
-		return convert_to_sgbuf(s1 + off1, s2, off2, n);
+			sgbuf_2arg_generic(&sgbuf_bcopy_cb, NULL, s1, s2, off1,
+			    off2, 0, 1, size);
+			return;
 
 		case TO_VOIDP:
-		return convert_to_void(s1 + off1, s2, off2, n);
+			sgbuf_2arg_generic(&sgbuf_bcopy_cb, NULL, s2, s1, off2,
+			    off1, 1, 0, size);
+			return;
 	}
 
 	VERIFY(0);
 }
 
-/* Run callback on all chunks in buf */
+FORCE_INLINE int
+sgbuf_iszero_cb(void *p, size_t n, void *data)
+{
+	uint64_t *val = p;
+
+	while ( n > 0 ) {
+		if (val[0]) {
+			*(int*)data = 1;
+			return (1);
+		}
+		val++;
+		n -= sizeof(uint64_t);
+	}
+	return (0);
+}
 
 int
-sgbuf_eval(sgbuf_t *buf, sgbuf_callback_func_t func,
-	uint32_t chunk_size, uint32_t count, void *data)
+sgbuf_iszero(sgbuf_t *buf, size_t offset, size_t size)
 {
-	uint32_t i, j, i_max, tmp, remain;
-
-	ASSERT_SGBUF(buf);
-	/* Only power of 2 chunks are valid */
-	ASSERT(chunk_size <= PAGE_SIZE);
-	ASSERT(ISP2(chunk_size));
-
-	if (count) {
-		tmp = (buf->count * PAGE_SIZE) / chunk_size;
-		tmp = MIN(tmp, count);
-		i_max = ((tmp * chunk_size) >> PAGE_SHIFT);
-		remain = P2PHASE(tmp * chunk_size, PAGE_SIZE);
-	} else {
-		i_max = buf->count;
-		remain = 0;
-	}
-
-	for ( i = 0 ; i < i_max ; i++ ) {
-		void *p = native_page_map(buf->pages[i]);
-		for ( j = 0 ; j < PAGE_SIZE ; j += chunk_size) {
-			int ret = func(i * PAGE_SIZE + j, p + j, data);
-			if (ret) {
-				native_page_unmap(buf->pages[i]);
-				return ret;
-			}
-		}
-		native_page_unmap(buf->pages[i]);
-	}
-
-	if (remain) {
-		void *p = native_page_map(buf->pages[i_max + 1]);
-		for ( j = 0 ; j < remain ; j += chunk_size) {
-			int ret = func((i_max + 1) * PAGE_SIZE + j, p + j, data);
-			if (ret) {
-				native_page_unmap(buf->pages[i_max + 1]);
-				return ret;
-			}
-		}
-		native_page_unmap(buf->pages[i_max + 1]);
-	}
-
-	return 0;
-
+	int a = 0;
+	sgbuf_generic_1arg(&sgbuf_iszero_cb, &a, buf, offset, size);
+	return (a == 0);
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
-
+#include <linux/module_compat.h>
 spl_module_init(sgbuf_init);
 spl_module_exit(sgbuf_fini);
 

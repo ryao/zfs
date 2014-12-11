@@ -33,6 +33,7 @@
 #include <sys/spa.h>
 #include <sys/stat.h>
 #include <sys/processor.h>
+#include <sys/sgbuf.h>
 #include <sys/zfs_context.h>
 #include <sys/rrwlock.h>
 #include <sys/utsname.h>
