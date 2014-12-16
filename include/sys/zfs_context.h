@@ -271,6 +271,7 @@ typedef struct kmutex {
 } kmutex_t;
 
 #define	MUTEX_DEFAULT	0
+#define	MUTEX_SPIN	MUTEX_DEFAULT
 #define	MUTEX_HELD(m)	((m)->m_owner == curthread)
 #define	MUTEX_NOT_HELD(m) (!MUTEX_HELD(m))
 
