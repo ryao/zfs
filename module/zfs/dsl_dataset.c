@@ -996,7 +996,7 @@ dsl_dataset_snapshot_check(void *arg, dmu_tx_t *tx)
 	    pair != NULL; pair = nvlist_next_nvpair(ddsa->ddsa_snaps, pair)) {
 		int error = 0;
 		dsl_dataset_t *ds;
-		char *name, *atp;
+		char *name, *atp = NULL;
 		char dsname[MAXNAMELEN];
 
 		name = nvpair_name(pair);
