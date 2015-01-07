@@ -794,7 +794,7 @@ dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 			bufoff = offset - db->db_offset;
 			tocpy = (int)MIN(db->db_size - bufoff, size);
 
-			bcopy((char *)db->db_data + bufoff, buf, tocpy);
+			bcopy(db->db_data.zio_buf + bufoff, buf, tocpy);
 
 			offset += tocpy;
 			size -= tocpy;
@@ -836,7 +836,7 @@ dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 		else
 			dmu_buf_will_dirty(db, tx);
 
-		(void) memcpy((char *)db->db_data + bufoff, buf, tocpy);
+		(void) memcpy(db->db_data.zio_buf + bufoff, buf, tocpy);
 
 		if (tocpy == db->db_size)
 			dmu_buf_fill_done(db, tx);
@@ -1119,7 +1119,7 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 		if (tocpy == 0)
 			break;
 
-		didcpy = dmu_req_copy(db->db_data + bufoff, tocpy, req,
+		didcpy = dmu_req_copy(db->db_data.zio_buf + bufoff, tocpy, req,
 		    req_offset);
 
 		if (didcpy < tocpy)
@@ -1174,7 +1174,7 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 		else
 			dmu_buf_will_dirty(db, tx);
 
-		didcpy = dmu_req_copy(db->db_data + bufoff, tocpy, req,
+		didcpy = dmu_req_copy(db_data.zio_buf + bufoff, tocpy, req,
 		    req_offset);
 
 		if (tocpy == db->db_size)
@@ -1237,7 +1237,7 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 			else
 				XUIOSTAT_BUMP(xuiostat_rbuf_copied);
 		} else {
-			err = uiomove((char *)db->db_data + bufoff, tocpy,
+			err = uiomove(db_data.zio_buf + bufoff, tocpy,
 			    UIO_READ, uio);
 		}
 		if (err)
@@ -1286,7 +1286,7 @@ dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 		 * to lock the pages in memory, so that uiomove won't
 		 * block.
 		 */
-		err = uiomove((char *)db->db_data + bufoff, tocpy,
+		err = uiomove(db->db_data.zio_buf + bufoff, tocpy,
 		    UIO_WRITE, uio);
 
 		if (tocpy == db->db_size)
@@ -1538,7 +1538,7 @@ dmu_sync_late_arrival(zio_t *pio, objset_t *os, dmu_sync_cb_t *done, zgd_t *zgd,
 	dsa->dsa_tx = tx;
 
 	zio_nowait(zio_write(pio, os->os_spa, dmu_tx_get_txg(tx), zgd->zgd_bp,
-	    zgd->zgd_db->db_data, zgd->zgd_db->db_size, zp,
+	    zgd->zgd_db->db_data.zio_buf, zgd->zgd_db->db_size, zp,
 	    dmu_sync_late_arrival_ready, NULL, dmu_sync_late_arrival_done, dsa,
 	    ZIO_PRIORITY_SYNC_WRITE, ZIO_FLAG_CANFAIL|ZIO_FLAG_FASTWRITE, zb));
 
@@ -1678,7 +1678,7 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	dsa->dsa_tx = NULL;
 
 	zio_nowait(arc_write(pio, os->os_spa, txg,
-	    bp, dr->dt.dl.dr_data, DBUF_IS_L2CACHEABLE(db),
+	    bp, (void *)dr->dt.dl.dr_data.zio_buf, DBUF_IS_L2CACHEABLE(db),
 	    DBUF_IS_L2COMPRESSIBLE(db), &zp, dmu_sync_ready,
 	    NULL, dmu_sync_done, dsa, ZIO_PRIORITY_SYNC_WRITE,
 	    ZIO_FLAG_CANFAIL, &zb));

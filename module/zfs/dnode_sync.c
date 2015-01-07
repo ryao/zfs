@@ -66,10 +66,10 @@ dnode_increase_indirection(dnode_t *dn, dmu_tx_t *tx)
 	if (i != nblkptr) {
 		/* transfer dnode's block pointers to new indirect block */
 		(void) dbuf_read(db, NULL, DB_RF_MUST_SUCCEED|DB_RF_HAVESTRUCT);
-		ASSERT(db->db.db_data);
+		ASSERT(db->db.db_data.zio_buf);
 		ASSERT(arc_released(db->db_buf));
 		ASSERT3U(sizeof (blkptr_t) * nblkptr, <=, db->db.db_size);
-		bcopy(dn->dn_phys->dn_blkptr, db->db.db_data,
+		bcopy(dn->dn_phys->dn_blkptr, db->db.db_data.zio_buf,
 		    sizeof (blkptr_t) * nblkptr);
 		arc_buf_freeze(db->db_buf);
 	}
@@ -97,8 +97,9 @@ dnode_increase_indirection(dnode_t *dn, dmu_tx_t *tx)
 
 		child->db_parent = db;
 		dbuf_add_ref(db, child);
-		if (db->db.db_data)
-			child->db_blkptr = (blkptr_t *)db->db.db_data + i;
+		if (db->db.db_data.zio_buf)
+			child->db_blkptr =
+			    (blkptr_t *)db->db.db_data.zio_buf + i;
 		else
 			child->db_blkptr = NULL;
 		dprintf_dbuf_bp(child, child->db_blkptr,
@@ -203,7 +204,7 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 
 		/* data_old better be zeroed */
 		if (dr) {
-			buf = dr->dt.dl.dr_data->b_data;
+			buf = dr->dt.dl.dr_data.arc_buf->b_data;
 			for (j = 0; j < child->db.db_size >> 3; j++) {
 				if (buf[j] != 0) {
 					panic("freed data not zero: "
@@ -218,7 +219,7 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 		 * future txg.
 		 */
 		mutex_enter(&child->db_mtx);
-		buf = child->db.db_data;
+		buf = (uint64_t *)child->db.db_data.zio_buf;
 		if (buf != NULL && child->db_state != DB_FILL &&
 		    child->db_last_dirty == NULL) {
 			for (j = 0; j < child->db.db_size >> 3; j++) {
@@ -257,7 +258,7 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 		(void) dbuf_read(db, NULL, DB_RF_MUST_SUCCEED);
 
 	dbuf_release_bp(db);
-	bp = db->db.db_data;
+	bp = (blkptr_t *) db->db.db_data.zio_buf;
 
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
@@ -296,13 +297,14 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 	}
 
 	/* If this whole block is free, free ourself too. */
-	for (i = 0, bp = db->db.db_data; i < 1 << epbs; i++, bp++) {
-		if (!BP_IS_HOLE(bp))
+	bp = (blkptr_t *) db->db.db_data.zio_buf;
+	for (i = 0; i < 1 << epbs; i++) {
+		if (!BP_IS_HOLE(&bp[i]))
 			break;
 	}
 	if (i == 1 << epbs) {
 		/* didn't find any non-holes */
-		bzero(db->db.db_data, db->db.db_size);
+		bzero(db->db.db_data.zio_buf, db->db.db_size);
 		free_blocks(dn, db->db_blkptr, 1, tx);
 	} else {
 		/*
@@ -483,7 +485,7 @@ dnode_undirty_dbufs(list_t *list)
 		db->db_dirtycnt -= 1;
 		if (db->db_level == 0) {
 			ASSERT(db->db_blkid == DMU_BONUS_BLKID ||
-			    dr->dt.dl.dr_data == db->db_buf);
+			    dr->dt.dl.dr_data.zio_buf == db->db_buf);
 			dbuf_unoverride(dr);
 		}
 		kmem_free(dr, sizeof (dbuf_dirty_record_t));

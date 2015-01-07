@@ -1219,7 +1219,7 @@ dmu_objset_userquota_find_data(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	void *data;
 
 	if (db->db_dirtycnt == 0)
-		return (db->db.db_data);  /* Nothing is changing */
+		return (db->db.db_data.zio_buf);  /* Nothing is changing */
 
 	for (drp = &db->db_last_dirty; (dr = *drp) != NULL; drp = &dr->dr_next)
 		if (dr->dr_txg == tx->tx_txg)
@@ -1235,9 +1235,9 @@ dmu_objset_userquota_find_data(dmu_buf_impl_t *db, dmu_tx_t *tx)
 
 		if (dn->dn_bonuslen == 0 &&
 		    dr->dr_dbuf->db_blkid == DMU_SPILL_BLKID)
-			data = dr->dt.dl.dr_data->b_data;
+			data = dr->dt.dl.dr_data.arc_buf->b_data;
 		else
-			data = dr->dt.dl.dr_data;
+			data = dr->dt.dl.dr_data.zio_buf;
 
 		DB_DNODE_EXIT(dr->dr_dbuf);
 	}
@@ -1284,7 +1284,7 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 			    FTAG, (dmu_buf_t **)&db);
 			ASSERT(error == 0);
 			mutex_enter(&db->db_mtx);
-			data = (before) ? db->db.db_data :
+			data = (before) ? db->db.db_data.zio_buf :
 			    dmu_objset_userquota_find_data(db, tx);
 			have_spill = B_TRUE;
 	} else {

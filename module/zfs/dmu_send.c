@@ -1431,11 +1431,11 @@ restore_object(struct restorearg *ra, objset_t *os, struct drr_object *drro)
 		dmu_buf_will_dirty(db, tx);
 
 		ASSERT3U(db->db_size, >=, drro->drr_bonuslen);
-		bcopy(data, db->db_data, drro->drr_bonuslen);
+		bcopy(data, db->db_data.zio_buf, drro->drr_bonuslen);
 		if (ra->byteswap) {
 			dmu_object_byteswap_t byteswap =
 			    DMU_OT_BYTESWAP(drro->drr_bonustype);
-			dmu_ot_byteswap[byteswap].ob_func(db->db_data,
+			dmu_ot_byteswap[byteswap].ob_func(db->db_data.zio_buf,
 			    drro->drr_bonuslen);
 		}
 		dmu_buf_rele(db, FTAG);
@@ -1573,7 +1573,7 @@ restore_write_byref(struct restorearg *ra, objset_t *os,
 		return (err);
 	}
 	dmu_write(os, drrwbr->drr_object,
-	    drrwbr->drr_offset, drrwbr->drr_length, dbp->db_data, tx);
+	    drrwbr->drr_offset, drrwbr->drr_length, dbp->db_data.zio_buf, tx);
 	dmu_buf_rele(dbp, FTAG);
 	dmu_tx_commit(tx);
 	return (0);
@@ -1662,7 +1662,7 @@ restore_spill(struct restorearg *ra, objset_t *os, struct drr_spill *drrs)
 	if (db_spill->db_size < drrs->drr_length)
 		VERIFY(0 == dbuf_spill_set_blksz(db_spill,
 		    drrs->drr_length, tx));
-	bcopy(data, db_spill->db_data, drrs->drr_length);
+	bcopy(data, db_spill->db_data.zio_buf, drrs->drr_length);
 
 	dmu_buf_rele(db, FTAG);
 	dmu_buf_rele(db_spill, FTAG);

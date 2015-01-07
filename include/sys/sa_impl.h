@@ -222,7 +222,7 @@ struct sa_handle {
 
 #define	SA_GET_HDR(hdl, type) \
 	((sa_hdr_phys_t *)((dmu_buf_impl_t *)(SA_GET_DB(hdl, \
-	type))->db.db_data))
+	type))->db.db_data.zio_buf))
 
 #define	SA_IDX_TAB_GET(hdl, type) \
 	(type == SA_BONUS ? hdl->sa_bonus_tab : hdl->sa_spill_tab)

@@ -131,7 +131,11 @@ typedef struct dbuf_dirty_record {
 			 * so that we can retain the pointer even if it
 			 * gets COW'd in a subsequent transaction group.
 			 */
-			arc_buf_t *dr_data;
+			union dr_data_buf {
+				arc_buf_t *arc_buf;
+				char *zio_buf;
+				void *generic;
+			} dr_data;
 			blkptr_t dr_overridden_by;
 			override_states_t dr_override_state;
 			uint8_t dr_copies;

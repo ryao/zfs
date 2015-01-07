@@ -349,7 +349,7 @@ space_map_open_impl(space_map_t *sm)
 		return (error);
 
 	dmu_object_size_from_db(sm->sm_dbuf, &sm->sm_blksz, &blocks);
-	sm->sm_phys = sm->sm_dbuf->db_data;
+	sm->sm_phys = (space_map_phys_t *) sm->sm_dbuf->db_data.zio_buf;
 	return (0);
 }
 

@@ -101,7 +101,7 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 		dd->dd_object = ddobj;
 		dd->dd_dbuf = dbuf;
 		dd->dd_pool = dp;
-		dd->dd_phys = dbuf->db_data;
+		dd->dd_phys = (dsl_dir_phys_t *) dbuf->db_data.zio_buf;
 		mutex_init(&dd->dd_lock, NULL, MUTEX_DEFAULT, NULL);
 
 		list_create(&dd->dd_prop_cbs, sizeof (dsl_prop_cb_record_t),
@@ -148,7 +148,8 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 			    dd->dd_phys->dd_origin_obj, FTAG, &origin_bonus);
 			if (err != 0)
 				goto errout;
-			origin_phys = origin_bonus->db_data;
+			origin_phys = (dsl_dataset_phys_t *)
+			    origin_bonus->db_data.zio_buf;
 			dd->dd_origin_txg =
 			    origin_phys->ds_creation_txg;
 			dmu_buf_rele(origin_bonus, FTAG);
@@ -405,7 +406,7 @@ dsl_dir_create_sync(dsl_pool_t *dp, dsl_dir_t *pds, const char *name,
 	}
 	VERIFY(0 == dmu_bonus_hold(mos, ddobj, FTAG, &dbuf));
 	dmu_buf_will_dirty(dbuf, tx);
-	ddphys = dbuf->db_data;
+	ddphys = (dsl_dir_phys_t *) dbuf->db_data.zio_buf;
 
 	ddphys->dd_creation_time = gethrestime_sec();
 	if (pds)

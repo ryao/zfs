@@ -1363,7 +1363,7 @@ ztest_bt_bonus(dmu_buf_t *db)
 	dmu_object_info_from_db(db, &doi);
 	ASSERT3U(doi.doi_bonus_size, <=, db->db_size);
 	ASSERT3U(doi.doi_bonus_size, >=, sizeof (*bt));
-	bt = (void *)((char *)db->db_data + doi.doi_bonus_size - sizeof (*bt));
+	bt = (void *)(db->db_data.zio_buf + doi.doi_bonus_size - sizeof (*bt));
 
 	return (bt);
 }
@@ -5239,10 +5239,12 @@ ztest_ddt_repair(ztest_ds_t *zd, uint64_t id)
 		}
 		ASSERT(db->db_offset == offset);
 		ASSERT(db->db_size == blocksize);
-		ASSERT(ztest_pattern_match(db->db_data, db->db_size, pattern) ||
-		    ztest_pattern_match(db->db_data, db->db_size, 0ULL));
+		ASSERT(ztest_pattern_match(db->db_data.zio_buf, db->db_size,
+		    pattern) ||
+		    ztest_pattern_match(db->db_data.zio_buf, db->db_size,
+		    0ULL));
 		dmu_buf_will_fill(db, tx);
-		ztest_pattern_set(db->db_data, db->db_size, pattern);
+		ztest_pattern_set(db->db_data.zio_buf, db->db_size, pattern);
 		dmu_buf_rele(db, FTAG);
 	}
 

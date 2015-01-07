@@ -281,11 +281,16 @@ void dmu_objset_byteswap(void *buf, size_t size);
 int dsl_dataset_rename_snapshot(const char *fsname,
     const char *oldsnapname, const char *newsnapname, boolean_t recursive);
 
+typedef struct arc_buf arc_buf_t;
 typedef struct dmu_buf {
 	uint64_t db_object;		/* object that this buffer is part of */
 	uint64_t db_offset;		/* byte offset in this object */
 	uint64_t db_size;		/* size of buffer in bytes */
-	void *db_data;			/* data in buffer */
+	union db_data {
+		arc_buf_t *arc_buf;
+		char *zio_buf;
+		void *generic;
+	} db_data;
 } dmu_buf_t;
 
 typedef void dmu_buf_evict_func_t(struct dmu_buf *db, void *user_ptr);

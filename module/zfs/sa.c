@@ -729,8 +729,9 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 	}
 
 	/* setup starting pointers to lay down data */
-	data_start = (void *)((uintptr_t)hdl->sa_bonus->db_data + hdrsize);
-	sahdr = (sa_hdr_phys_t *)hdl->sa_bonus->db_data;
+	data_start = (void *)((uintptr_t)hdl->sa_bonus->db_data.zio_buf +
+	    hdrsize);
+	sahdr = (sa_hdr_phys_t *)hdl->sa_bonus->db_data.zio_buf;
 	buftype = SA_BONUS;
 
 	if (spilling)
@@ -766,7 +767,7 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 			hash = -1ULL;
 			len_idx = 0;
 
-			sahdr = (sa_hdr_phys_t *)hdl->sa_spill->db_data;
+			sahdr = (sa_hdr_phys_t *)hdl->sa_spill->db_data.zio_buf;
 			sahdr->sa_magic = SA_MAGIC;
 			data_start = (void *)((uintptr_t)sahdr +
 			    spillhdrsize);
@@ -1690,7 +1691,7 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 	if (dn->dn_bonuslen != 0) {
 		bonus_data_size = hdl->sa_bonus->db_size;
 		old_data[0] = kmem_alloc(bonus_data_size, KM_SLEEP);
-		bcopy(hdl->sa_bonus->db_data, old_data[0],
+		bcopy(hdl->sa_bonus->db_data.zio_buf, old_data[0],
 		    hdl->sa_bonus->db_size);
 		bonus_attr_count = hdl->sa_bonus_tab->sa_layout->lot_attr_count;
 	} else {
@@ -1703,7 +1704,7 @@ sa_modify_attrs(sa_handle_t *hdl, sa_attr_type_t newattr,
 	if ((error = sa_get_spill(hdl)) == 0) {
 		ASSERT3U(hdl->sa_spill->db_size, <=, SPA_MAXBLOCKSIZE);
 		old_data[1] = sa_spill_alloc(KM_SLEEP);
-		bcopy(hdl->sa_spill->db_data, old_data[1],
+		bcopy(hdl->sa_spill->db_data.zio_buf, old_data[1],
 		    hdl->sa_spill->db_size);
 		spill_attr_count =
 		    hdl->sa_spill_tab->sa_layout->lot_attr_count;
