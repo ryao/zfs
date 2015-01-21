@@ -315,7 +315,7 @@ zio_push_transform(zio_t *zio, void *data, uint64_t size, uint64_t bufsize,
 {
 	zio_transform_t *zt = kmem_alloc(sizeof (zio_transform_t), KM_PUSHPAGE);
 
-	zt->zt_orig_data = zio->io_data;
+	zt->zt_orig_data = (zio->io_data + zio->io_data_offset);
 	zt->zt_orig_size = zio->io_size;
 	zt->zt_bufsize = bufsize;
 	zt->zt_transform = transform;
@@ -323,7 +323,7 @@ zio_push_transform(zio_t *zio, void *data, uint64_t size, uint64_t bufsize,
 	zt->zt_next = zio->io_transform_stack;
 	zio->io_transform_stack = zt;
 
-	zio->io_data = data;
+	(zio->io_data + zio->io_data_offset) = data;
 	zio->io_size = size;
 }
 
@@ -338,9 +338,10 @@ zio_pop_transforms(zio_t *zio)
 			    zt->zt_orig_data, zt->zt_orig_size);
 
 		if (zt->zt_bufsize != 0)
-			zio_buf_free(zio->io_data, zt->zt_bufsize);
+			zio_buf_free((zio->io_data + zio->io_data_offset),
+				     zt->zt_bufsize);
 
-		zio->io_data = zt->zt_orig_data;
+		(zio->io_data + zio->io_data_offset) = zt->zt_orig_data;
 		zio->io_size = zt->zt_orig_size;
 		zio->io_transform_stack = zt->zt_next;
 
@@ -359,7 +360,7 @@ zio_subblock(zio_t *zio, void *data, uint64_t size)
 	ASSERT(zio->io_size > size);
 
 	if (zio->io_type == ZIO_TYPE_READ)
-		bcopy(zio->io_data, data, size);
+		bcopy((zio->io_data + zio->io_data_offset), data, size);
 }
 
 static void
@@ -367,7 +368,7 @@ zio_decompress(zio_t *zio, void *data, uint64_t size)
 {
 	if (zio->io_error == 0 &&
 	    zio_decompress_data(BP_GET_COMPRESS(zio->io_bp),
-	    zio->io_data, data, zio->io_size, size) != 0)
+	    (zio->io_data + zio->io_data_offset), data, zio->io_size, size) != 0)
 		zio->io_error = SET_ERROR(EIO);
 }
 
@@ -537,10 +538,10 @@ zio_inherit_child_errors(zio_t *zio, enum zio_child c)
  */
 static zio_t *
 zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
-    void *data, uint64_t size, zio_done_func_t *done, void *private,
-    zio_type_t type, zio_priority_t priority, enum zio_flag flags,
-    vdev_t *vd, uint64_t offset, const zbookmark_phys_t *zb,
-    enum zio_stage stage, enum zio_stage pipeline)
+    void *data, uint32_t data_offset, uint64_t size, zio_done_func_t *done,
+    void *private, zio_type_t type, zio_priority_t priority,
+    enum zio_flag flags, vdev_t *vd, uint64_t offset,
+    const zbookmark_phys_t *zb, enum zio_stage stage, enum zio_stage pipeline)
 {
 	zio_t *zio;
 
@@ -599,6 +600,7 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	zio->io_delta = 0;
 	zio->io_delay = 0;
 	zio->io_orig_data = zio->io_data = data;
+	zio->io_orig_data_offset = zio->io_data_offset = data_offset;
 	zio->io_orig_size = zio->io_size = size;
 	zio->io_orig_flags = zio->io_flags = flags;
 	zio->io_orig_stage = zio->io_stage = stage;
@@ -656,7 +658,7 @@ zio_null(zio_t *pio, spa_t *spa, vdev_t *vd, zio_done_func_t *done,
 {
 	zio_t *zio;
 
-	zio = zio_create(pio, spa, 0, NULL, NULL, 0, done, private,
+	zio = zio_create(pio, spa, 0, NULL, NULL, 0, 0, done, private,
 	    ZIO_TYPE_NULL, ZIO_PRIORITY_NOW, flags, vd, 0, NULL,
 	    ZIO_STAGE_OPEN, ZIO_INTERLOCK_PIPELINE);
 
@@ -671,13 +673,14 @@ zio_root(spa_t *spa, zio_done_func_t *done, void *private, enum zio_flag flags)
 
 zio_t *
 zio_read(zio_t *pio, spa_t *spa, const blkptr_t *bp,
-    void *data, uint64_t size, zio_done_func_t *done, void *private,
-    zio_priority_t priority, enum zio_flag flags, const zbookmark_phys_t *zb)
+    void *data, uint32_t data_offset, uint64_t size, zio_done_func_t *done,
+    void *private, zio_priority_t priority, enum zio_flag flags,
+    const zbookmark_phys_t *zb)
 {
 	zio_t *zio;
 
 	zio = zio_create(pio, spa, BP_PHYSICAL_BIRTH(bp), bp,
-	    data, size, done, private,
+	    data, data_offset, size, done, private,
 	    ZIO_TYPE_READ, priority, flags, NULL, 0, zb,
 	    ZIO_STAGE_OPEN, (flags & ZIO_FLAG_DDT_CHILD) ?
 	    ZIO_DDT_CHILD_READ_PIPELINE : ZIO_READ_PIPELINE);
@@ -687,7 +690,7 @@ zio_read(zio_t *pio, spa_t *spa, const blkptr_t *bp,
 
 zio_t *
 zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
-    void *data, uint64_t size, const zio_prop_t *zp,
+    void *data, uint32_t data_offset, uint64_t size, const zio_prop_t *zp,
     zio_done_func_t *ready, zio_done_func_t *physdone, zio_done_func_t *done,
     void *private,
     zio_priority_t priority, enum zio_flag flags, const zbookmark_phys_t *zb)
@@ -703,8 +706,8 @@ zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
 	    zp->zp_copies > 0 &&
 	    zp->zp_copies <= spa_max_replication(spa));
 
-	zio = zio_create(pio, spa, txg, bp, data, size, done, private,
-	    ZIO_TYPE_WRITE, priority, flags, NULL, 0, zb,
+	zio = zio_create(pio, spa, txg, bp, data, data_offset, size, done,
+	    private, ZIO_TYPE_WRITE, priority, flags, NULL, 0, zb,
 	    ZIO_STAGE_OPEN, (flags & ZIO_FLAG_DDT_CHILD) ?
 	    ZIO_DDT_CHILD_WRITE_PIPELINE : ZIO_WRITE_PIPELINE);
 
@@ -727,12 +730,12 @@ zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
 
 zio_t *
 zio_rewrite(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp, void *data,
-    uint64_t size, zio_done_func_t *done, void *private,
+    uint32_t data_offset, uint64_t size, zio_done_func_t *done, void *private,
     zio_priority_t priority, enum zio_flag flags, zbookmark_phys_t *zb)
 {
 	zio_t *zio;
 
-	zio = zio_create(pio, spa, txg, bp, data, size, done, private,
+	zio = zio_create(pio, spa, txg, bp, data, data_offset, size, done, private,
 	    ZIO_TYPE_WRITE, priority, flags, NULL, 0, zb,
 	    ZIO_STAGE_OPEN, ZIO_REWRITE_PIPELINE);
 
@@ -811,7 +814,7 @@ zio_free_sync(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	if (BP_IS_GANG(bp) || BP_GET_DEDUP(bp))
 		stage |= ZIO_STAGE_ISSUE_ASYNC;
 
-	zio = zio_create(pio, spa, txg, bp, NULL, BP_GET_PSIZE(bp),
+	zio = zio_create(pio, spa, txg, bp, NULL, 0, BP_GET_PSIZE(bp),
 	    NULL, NULL, ZIO_TYPE_FREE, ZIO_PRIORITY_NOW, flags,
 	    NULL, 0, NULL, ZIO_STAGE_OPEN, stage);
 
@@ -845,7 +848,7 @@ zio_claim(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	ASSERT(txg == spa_first_txg(spa) || txg == 0);
 	ASSERT(!BP_GET_DEDUP(bp) || !spa_writeable(spa));	/* zdb(1M) */
 
-	zio = zio_create(pio, spa, txg, bp, NULL, BP_GET_PSIZE(bp),
+	zio = zio_create(pio, spa, txg, bp, NULL, 0, BP_GET_PSIZE(bp),
 	    done, private, ZIO_TYPE_CLAIM, ZIO_PRIORITY_NOW, flags,
 	    NULL, 0, NULL, ZIO_STAGE_OPEN, ZIO_CLAIM_PIPELINE);
 
@@ -860,9 +863,9 @@ zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
 	int c;
 
 	if (vd->vdev_children == 0) {
-		zio = zio_create(pio, spa, 0, NULL, NULL, 0, done, private,
-		    ZIO_TYPE_IOCTL, ZIO_PRIORITY_NOW, flags, vd, 0, NULL,
-		    ZIO_STAGE_OPEN, ZIO_IOCTL_PIPELINE);
+		zio = zio_create(pio, spa, 0, NULL, NULL, 0, 0, done,
+		    private, ZIO_TYPE_IOCTL, ZIO_PRIORITY_NOW, flags, vd, 0,
+		    NULL, ZIO_STAGE_OPEN, ZIO_IOCTL_PIPELINE);
 
 		zio->io_cmd = cmd;
 	} else {
@@ -878,8 +881,9 @@ zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
 
 zio_t *
 zio_read_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
-    void *data, int checksum, zio_done_func_t *done, void *private,
-    zio_priority_t priority, enum zio_flag flags, boolean_t labels)
+    void *data, uint32_t data_offset, int checksum, zio_done_func_t *done,
+    void *private, zio_priority_t priority, enum zio_flag flags,
+    boolean_t labels)
 {
 	zio_t *zio;
 
@@ -888,9 +892,9 @@ zio_read_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
 	    offset >= vd->vdev_psize - VDEV_LABEL_END_SIZE);
 	ASSERT3U(offset + size, <=, vd->vdev_psize);
 
-	zio = zio_create(pio, vd->vdev_spa, 0, NULL, data, size, done, private,
-	    ZIO_TYPE_READ, priority, flags | ZIO_FLAG_PHYSICAL, vd, offset,
-	    NULL, ZIO_STAGE_OPEN, ZIO_READ_PHYS_PIPELINE);
+	zio = zio_create(pio, vd->vdev_spa, 0, NULL, data, data_offset, size,
+	    done, private, ZIO_TYPE_READ, priority, flags | ZIO_FLAG_PHYSICAL,
+	    vd, offset, NULL, ZIO_STAGE_OPEN, ZIO_READ_PHYS_PIPELINE);
 
 	zio->io_prop.zp_checksum = checksum;
 
@@ -899,8 +903,9 @@ zio_read_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
 
 zio_t *
 zio_write_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
-    void *data, int checksum, zio_done_func_t *done, void *private,
-    zio_priority_t priority, enum zio_flag flags, boolean_t labels)
+    void *data, uint32_t data_offset, int checksum, zio_done_func_t *done,
+    void *private, zio_priority_t priority, enum zio_flag flags,
+    boolean_t labels)
 {
 	zio_t *zio;
 
@@ -935,8 +940,9 @@ zio_write_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
  */
 zio_t *
 zio_vdev_child_io(zio_t *pio, blkptr_t *bp, vdev_t *vd, uint64_t offset,
-	void *data, uint64_t size, int type, zio_priority_t priority,
-	enum zio_flag flags, zio_done_func_t *done, void *private)
+	void *data, uint32_t data_offset, uint64_t size, int type,
+	zio_priority_t priority, enum zio_flag flags, zio_done_func_t *done,
+	void *private)
 {
 	enum zio_stage pipeline = ZIO_VDEV_CHILD_PIPELINE;
 	zio_t *zio;
@@ -967,7 +973,7 @@ zio_vdev_child_io(zio_t *pio, blkptr_t *bp, vdev_t *vd, uint64_t offset,
 	if (flags & ZIO_FLAG_IO_REPAIR)
 		flags &= ~ZIO_FLAG_SPECULATIVE;
 
-	zio = zio_create(pio, pio->io_spa, pio->io_txg, bp, data, size,
+	zio = zio_create(pio, pio->io_spa, pio->io_txg, bp, data, data_offset, size,
 	    done, private, type, priority, flags, vd, offset, &pio->io_bookmark,
 	    ZIO_STAGE_VDEV_IO_START >> 1, pipeline);
 
@@ -979,8 +985,8 @@ zio_vdev_child_io(zio_t *pio, blkptr_t *bp, vdev_t *vd, uint64_t offset,
 }
 
 zio_t *
-zio_vdev_delegated_io(vdev_t *vd, uint64_t offset, void *data, uint64_t size,
-	int type, zio_priority_t priority, enum zio_flag flags,
+zio_vdev_delegated_io(vdev_t *vd, uint64_t offset, void *data, uint32_t data_offset,
+	uint64_t size, int type, zio_priority_t priority, enum zio_flag flags,
 	zio_done_func_t *done, void *private)
 {
 	zio_t *zio;
@@ -988,7 +994,7 @@ zio_vdev_delegated_io(vdev_t *vd, uint64_t offset, void *data, uint64_t size,
 	ASSERT(vd->vdev_ops->vdev_op_leaf);
 
 	zio = zio_create(NULL, vd->vdev_spa, 0, NULL,
-	    data, size, done, private, type, priority,
+	    data, data_offset, size, done, private, type, priority,
 	    flags | ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_RETRY | ZIO_FLAG_DELEGATED,
 	    vd, offset, NULL,
 	    ZIO_STAGE_VDEV_IO_START >> 1, ZIO_VDEV_CHILD_PIPELINE);
@@ -1044,7 +1050,8 @@ zio_read_bp_init(zio_t *zio)
 
 	if (BP_IS_EMBEDDED(bp) && BPE_GET_ETYPE(bp) == BP_EMBEDDED_TYPE_DATA) {
 		zio->io_pipeline = ZIO_INTERLOCK_PIPELINE;
-		decode_embedded_bp_compressed(bp, zio->io_data);
+		decode_embedded_bp_compressed(bp,
+					      (zio->io_data + zio->io_data_offset));
 	} else {
 		ASSERT(!BP_IS_EMBEDDED(bp));
 	}
@@ -1149,7 +1156,9 @@ zio_write_bp_init(zio_t *zio)
 
 	if (compress != ZIO_COMPRESS_OFF) {
 		void *cbuf = zio_buf_alloc(lsize);
-		psize = zio_compress_data(compress, zio->io_data, cbuf, lsize);
+		psize = zio_compress_data(compress,
+					  (zio->io_data + zio->io_data_offset),
+					  cbuf, lsize);
 		if (psize == 0 || psize == lsize) {
 			compress = ZIO_COMPRESS_OFF;
 			zio_buf_free(cbuf, lsize);
@@ -1678,7 +1687,7 @@ zio_read_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 	if (gn != NULL)
 		return (pio);
 
-	return (zio_read(pio, pio->io_spa, bp, data, BP_GET_PSIZE(bp),
+	return (zio_read(pio, pio->io_spa, bp, data, 0, BP_GET_PSIZE(bp),
 	    NULL, NULL, pio->io_priority, ZIO_GANG_CHILD_FLAGS(pio),
 	    &pio->io_bookmark));
 }
@@ -1690,7 +1699,8 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 
 	if (gn != NULL) {
 		zio = zio_rewrite(pio, pio->io_spa, pio->io_txg, bp,
-		    gn->gn_gbh, SPA_GANGBLOCKSIZE, NULL, NULL, pio->io_priority,
+		    gn->gn_gbh, 0, SPA_GANGBLOCKSIZE, NULL, NULL,
+				  pio->io_priority,
 		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark);
 		/*
 		 * As we rewrite each gang header, the pipeline will compute
@@ -1713,7 +1723,8 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 			zio->io_pipeline &= ~ZIO_VDEV_IO_STAGES;
 	} else {
 		zio = zio_rewrite(pio, pio->io_spa, pio->io_txg, bp,
-		    data, BP_GET_PSIZE(bp), NULL, NULL, pio->io_priority,
+		    data, 0, BP_GET_PSIZE(bp), NULL, NULL,
+				  pio->io_priority,
 		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark);
 	}
 
@@ -1799,7 +1810,7 @@ zio_gang_tree_assemble(zio_t *gio, blkptr_t *bp, zio_gang_node_t **gnpp)
 	ASSERT(BP_IS_GANG(bp));
 
 	zio_nowait(zio_read(gio, gio->io_spa, bp, gn->gn_gbh,
-	    SPA_GANGBLOCKSIZE, zio_gang_tree_assemble_done, gn,
+	    0, SPA_GANGBLOCKSIZE, zio_gang_tree_assemble_done, gn,
 	    gio->io_priority, ZIO_GANG_CHILD_FLAGS(gio), &gio->io_bookmark));
 }
 
@@ -1818,7 +1829,8 @@ zio_gang_tree_assemble_done(zio_t *zio)
 		return;
 
 	if (BP_SHOULD_BYTESWAP(bp))
-		byteswap_uint64_array(zio->io_data, zio->io_size);
+		byteswap_uint64_array((zio->io_data + zio->io_data_offset),
+				      zio->io_size);
 
 	ASSERT(zio->io_data == gn->gn_gbh);
 	ASSERT(zio->io_size == SPA_GANGBLOCKSIZE);
@@ -1895,7 +1907,8 @@ zio_gang_issue(zio_t *zio)
 	ASSERT(zio->io_child_type > ZIO_CHILD_GANG);
 
 	if (zio->io_child_error[ZIO_CHILD_GANG] == 0)
-		zio_gang_tree_issue(zio, zio->io_gang_tree, bp, zio->io_data);
+		zio_gang_tree_issue(zio, zio->io_gang_tree, bp,
+				    (zio->io_data + zio->io_data_offset));
 	else
 		zio_gang_tree_free(&zio->io_gang_tree);
 
@@ -1974,7 +1987,8 @@ zio_write_gang_block(zio_t *pio)
 	/*
 	 * Create the gang header.
 	 */
-	zio = zio_rewrite(pio, spa, txg, bp, gbh, SPA_GANGBLOCKSIZE, NULL, NULL,
+	zio = zio_rewrite(pio, spa, txg, bp, gbh, 0, SPA_GANGBLOCKSIZE, NULL,
+			  NULL,
 	    pio->io_priority, ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark);
 
 	/*
@@ -1995,7 +2009,7 @@ zio_write_gang_block(zio_t *pio)
 		zp.zp_nopwrite = B_FALSE;
 
 		zio_nowait(zio_write(zio, spa, txg, &gbh->zg_blkptr[g],
-		    (char *)pio->io_data + (pio->io_size - resid), lsize, &zp,
+		    (char *)(pio->io_data + pio->io_data_offset) + (pio->io_size - resid), 0, lsize, &zp,
 		    zio_write_gang_member_ready, NULL, NULL, &gn->gn_child[g],
 		    pio->io_priority, ZIO_GANG_CHILD_FLAGS(pio),
 		    &pio->io_bookmark));
@@ -2090,9 +2104,10 @@ zio_ddt_child_read_done(zio_t *zio)
 	if (zio->io_error == 0)
 		ddt_phys_clear(ddp);	/* this ddp doesn't need repair */
 	if (zio->io_error == 0 && dde->dde_repair_data == NULL)
-		dde->dde_repair_data = zio->io_data;
+		dde->dde_repair_data = (zio->io_data + zio->io_data_offset);
 	else
-		zio_buf_free(zio->io_data, zio->io_size);
+		zio_buf_free((zio->io_data + zio->io_data_offset),
+			     zio->io_size);
 	mutex_exit(&pio->io_lock);
 }
 
@@ -2125,7 +2140,7 @@ zio_ddt_read_start(zio_t *zio)
 			ddt_bp_create(ddt->ddt_checksum, &dde->dde_key, ddp,
 			    &blk);
 			zio_nowait(zio_read(zio, zio->io_spa, &blk,
-			    zio_buf_alloc(zio->io_size), zio->io_size,
+			    zio_buf_alloc(zio->io_size), 0, zio->io_size,
 			    zio_ddt_child_read_done, dde, zio->io_priority,
 			    ZIO_DDT_CHILD_FLAGS(zio) | ZIO_FLAG_DONT_PROPAGATE,
 			    &zio->io_bookmark));
@@ -2134,7 +2149,7 @@ zio_ddt_read_start(zio_t *zio)
 	}
 
 	zio_nowait(zio_read(zio, zio->io_spa, bp,
-	    zio->io_data, zio->io_size, NULL, NULL, zio->io_priority,
+	    (zio->io_data + zio->io_data_offset), 0, zio->io_size, NULL, NULL, zio->io_priority,
 	    ZIO_DDT_CHILD_FLAGS(zio), &zio->io_bookmark));
 
 	return (ZIO_PIPELINE_CONTINUE);
@@ -2165,7 +2180,9 @@ zio_ddt_read_done(zio_t *zio)
 			return (ZIO_PIPELINE_STOP);
 		}
 		if (dde->dde_repair_data != NULL) {
-			bcopy(dde->dde_repair_data, zio->io_data, zio->io_size);
+			bcopy(dde->dde_repair_data,
+			      (zio->io_data + zio->io_data_offset),
+			      zio->io_size);
 			zio->io_child_error[ZIO_CHILD_DDT] = 0;
 		}
 		ddt_repair_done(ddt, dde);
@@ -2194,7 +2211,8 @@ zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 
 		if (lio != NULL) {
 			return (lio->io_orig_size != zio->io_orig_size ||
-			    bcmp(zio->io_orig_data, lio->io_orig_data,
+			    bcmp(zio->io_orig_data + zio->io_orig_data_offset,
+			    lio->io_orig_data + lio->io_orig_data_offset,
 			    zio->io_orig_size) != 0);
 		}
 	}
@@ -2219,7 +2237,8 @@ zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 
 			if (error == 0) {
 				if (arc_buf_size(abuf) != zio->io_orig_size ||
-				    bcmp(abuf->b_data, zio->io_orig_data,
+				    bcmp(abuf->b_data, zio->io_orig_data +
+				    zio->io_orig_data_offset,
 				    zio->io_orig_size) != 0)
 					error = SET_ERROR(EEXIST);
 				VERIFY(arc_buf_remove_ref(abuf, &abuf));
@@ -2380,11 +2399,12 @@ zio_ddt_write(zio_t *zio)
 		}
 
 		dio = zio_write(zio, spa, txg, bp, zio->io_orig_data,
-		    zio->io_orig_size, &czp, NULL, NULL,
-		    zio_ddt_ditto_write_done, dde, zio->io_priority,
+		    zio->io_orig_data_offset, zio->io_orig_size, &czp, NULL,
+		    NULL, zio_ddt_ditto_write_done, dde, zio->io_priority,
 		    ZIO_DDT_CHILD_FLAGS(zio), &zio->io_bookmark);
 
-		zio_push_transform(dio, zio->io_data, zio->io_size, 0, NULL);
+		zio_push_transform(dio, (zio->io_data + zio->io_data_offset),
+				   zio->io_size, 0, NULL);
 		dde->dde_lead_zio[DDT_PHYS_DITTO] = dio;
 	}
 
@@ -2402,11 +2422,13 @@ zio_ddt_write(zio_t *zio)
 		ddt_phys_addref(ddp);
 	} else {
 		cio = zio_write(zio, spa, txg, bp, zio->io_orig_data,
-		    zio->io_orig_size, zp, zio_ddt_child_write_ready, NULL,
-		    zio_ddt_child_write_done, dde, zio->io_priority,
-		    ZIO_DDT_CHILD_FLAGS(zio), &zio->io_bookmark);
+		    zio->io_orig_data_offset, zio->io_orig_size, zp,
+		    zio_ddt_child_write_ready, NULL, zio_ddt_child_write_done,
+		    dde, zio->io_priority, ZIO_DDT_CHILD_FLAGS(zio),
+		    &zio->io_bookmark);
 
-		zio_push_transform(cio, zio->io_data, zio->io_size, 0, NULL);
+		zio_push_transform(cio, (zio->io_data + zio->io_data_offset),
+				   zio->io_size, 0, NULL);
 		dde->dde_lead_zio[p] = cio;
 	}
 
@@ -2649,7 +2671,8 @@ zio_vdev_io_start(zio_t *zio)
 		char *abuf = zio_buf_alloc(asize);
 		ASSERT(vd == vd->vdev_top);
 		if (zio->io_type == ZIO_TYPE_WRITE) {
-			bcopy(zio->io_data, abuf, zio->io_size);
+			bcopy((zio->io_data + zio->io_data_offset), abuf,
+			      zio->io_size);
 			bzero(abuf + zio->io_size, asize - zio->io_size);
 		}
 		zio_push_transform(zio, abuf, asize, asize, zio_subblock);
@@ -2775,7 +2798,7 @@ zio_vsd_default_cksum_report(zio_t *zio, zio_cksum_report_t *zcr, void *ignored)
 {
 	void *buf = zio_buf_alloc(zio->io_size);
 
-	bcopy(zio->io_data, buf, zio->io_size);
+	bcopy((zio->io_data + zio->io_data_offset), buf, zio->io_size);
 
 	zcr->zcr_cbinfo = zio->io_size;
 	zcr->zcr_cbdata = buf;
@@ -2909,7 +2932,9 @@ zio_checksum_generate(zio_t *zio)
 		}
 	}
 
-	zio_checksum_compute(zio, checksum, zio->io_data, zio->io_size);
+	zio_checksum_compute(zio, checksum,
+			     (zio->io_data + zio->io_data_offset),
+			     zio->io_size);
 
 	return (ZIO_PIPELINE_CONTINUE);
 }

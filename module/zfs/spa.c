@@ -1866,7 +1866,7 @@ spa_load_verify_done(zio_t *zio)
 		else
 			atomic_add_64(&sle->sle_data_count, 1);
 	}
-	zio_data_buf_free(zio->io_data, zio->io_size);
+	zio_data_buf_free((zio->io_data + zio->io_data_offset), zio->io_size);
 
 	mutex_enter(&spa->spa_scrub_lock);
 	spa->spa_scrub_inflight--;
@@ -1913,7 +1913,7 @@ spa_load_verify_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	spa->spa_scrub_inflight++;
 	mutex_exit(&spa->spa_scrub_lock);
 
-	zio_nowait(zio_read(rio, spa, bp, data, size,
+	zio_nowait(zio_read(rio, spa, bp, data, 0, size,
 	    spa_load_verify_done, rio->io_private, ZIO_PRIORITY_SCRUB,
 	    ZIO_FLAG_SPECULATIVE | ZIO_FLAG_CANFAIL |
 	    ZIO_FLAG_SCRUB | ZIO_FLAG_RAW, zb));

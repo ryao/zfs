@@ -348,7 +348,7 @@ vdev_mirror_io_start(zio_t *zio)
 				mc = &mm->mm_child[c];
 				zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
 				    mc->mc_vd, mc->mc_offset,
-				    zio_buf_alloc(zio->io_size), zio->io_size,
+				    zio_buf_alloc(zio->io_size), 0, zio->io_size,
 				    zio->io_type, zio->io_priority, 0,
 				    vdev_mirror_scrub_done, mc));
 			}
@@ -372,7 +372,7 @@ vdev_mirror_io_start(zio_t *zio)
 	while (children--) {
 		mc = &mm->mm_child[c];
 		zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
-		    mc->mc_vd, mc->mc_offset, zio->io_data, zio->io_size,
+		    mc->mc_vd, mc->mc_offset, (zio->io_data + zio->io_data_offset), 0, zio->io_size,
 		    zio->io_type, zio->io_priority, 0,
 		    vdev_mirror_child_done, mc));
 		c++;
@@ -457,7 +457,7 @@ vdev_mirror_io_done(zio_t *zio)
 		mc = &mm->mm_child[c];
 		zio_vdev_io_redone(zio);
 		zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
-		    mc->mc_vd, mc->mc_offset, zio->io_data, zio->io_size,
+		    mc->mc_vd, mc->mc_offset, (zio->io_data + zio->io_data_offset), 0, zio->io_size,
 		    ZIO_TYPE_READ, zio->io_priority, 0,
 		    vdev_mirror_child_done, mc));
 		return;
@@ -498,7 +498,7 @@ vdev_mirror_io_done(zio_t *zio)
 
 			zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
 			    mc->mc_vd, mc->mc_offset,
-			    zio->io_data, zio->io_size,
+			    (zio->io_data + zio->io_data_offset), 0, zio->io_size,
 			    ZIO_TYPE_WRITE, ZIO_PRIORITY_ASYNC_WRITE,
 			    ZIO_FLAG_IO_REPAIR | (unexpected_errors ?
 			    ZIO_FLAG_SELF_HEAL : 0), NULL, NULL));

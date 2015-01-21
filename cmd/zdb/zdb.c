@@ -2315,7 +2315,7 @@ zdb_blkptr_done(zio_t *zio)
 	zdb_cb_t *zcb = zio->io_private;
 	zbookmark_phys_t *zb = &zio->io_bookmark;
 
-	zio_data_buf_free(zio->io_data, zio->io_size);
+	zio_data_buf_free((zio->io_data + zio->io_data_offset), zio->io_size);
 
 	mutex_enter(&spa->spa_scrub_lock);
 	spa->spa_scrub_inflight--;
@@ -2391,7 +2391,7 @@ zdb_blkptr_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		spa->spa_scrub_inflight++;
 		mutex_exit(&spa->spa_scrub_lock);
 
-		zio_nowait(zio_read(NULL, spa, bp, data, size,
+		zio_nowait(zio_read(NULL, spa, bp, data, 0, size,
 		    zdb_blkptr_done, zcb, ZIO_PRIORITY_ASYNC_READ, flags, zb));
 	}
 
@@ -3239,14 +3239,14 @@ zdb_read_block(char *thing, spa_t *spa)
 		/*
 		 * Treat this as a normal block read.
 		 */
-		zio_nowait(zio_read(zio, spa, bp, pbuf, psize, NULL, NULL,
+		zio_nowait(zio_read(zio, spa, bp, pbuf, 0, psize, NULL, NULL,
 		    ZIO_PRIORITY_SYNC_READ,
 		    ZIO_FLAG_CANFAIL | ZIO_FLAG_RAW, NULL));
 	} else {
 		/*
 		 * Treat this as a vdev child I/O.
 		 */
-		zio_nowait(zio_vdev_child_io(zio, bp, vd, offset, pbuf, psize,
+		zio_nowait(zio_vdev_child_io(zio, bp, vd, offset, pbuf, 0, psize,
 		    ZIO_TYPE_READ, ZIO_PRIORITY_SYNC_READ,
 		    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_QUEUE |
 		    ZIO_FLAG_DONT_PROPAGATE | ZIO_FLAG_DONT_RETRY |

@@ -712,7 +712,8 @@ vdev_disk_io_start(zio_t *zio)
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
-	error = __vdev_disk_physio(vd->vd_bdev, zio, zio->io_data,
+	error = __vdev_disk_physio(vd->vd_bdev, zio,
+				   (zio->io_data + zio->io_data_offset),
 	    zio->io_size, zio->io_offset, flags);
 	if (error) {
 		zio->io_error = error;

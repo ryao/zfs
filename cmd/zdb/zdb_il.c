@@ -159,7 +159,7 @@ zil_prt_rec_write(zilog_t *zilog, int txtype, lr_write_t *lr)
 		    lr->lr_offset / BP_GET_LSIZE(bp));
 
 		error = zio_wait(zio_read(NULL, zilog->zl_spa,
-		    bp, buf, BP_GET_LSIZE(bp), NULL, NULL,
+		    bp, buf, 0, BP_GET_LSIZE(bp), NULL, NULL,
 		    ZIO_PRIORITY_SYNC_READ, ZIO_FLAG_CANFAIL, &zb));
 		if (error)
 			return;

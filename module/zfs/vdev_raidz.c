@@ -2107,7 +2107,7 @@ vdev_raidz_io_done(zio_t *zio)
 				continue;
 			zio_nowait(zio_vdev_child_io(zio, NULL,
 			    vd->vdev_child[rc->rc_devidx],
-			    rc->rc_offset, rc->rc_data, rc->rc_size,
+			    rc->rc_offset, rc->rc_data, 0, rc->rc_size,
 			    zio->io_type, zio->io_priority, 0,
 			    vdev_raidz_child_done, rc));
 		} while (++c < rm->rm_cols);
@@ -2187,7 +2187,7 @@ done:
 				continue;
 
 			zio_nowait(zio_vdev_child_io(zio, NULL, cvd,
-			    rc->rc_offset, rc->rc_data, rc->rc_size,
+			    rc->rc_offset, rc->rc_data, 0, rc->rc_size,
 			    ZIO_TYPE_WRITE, ZIO_PRIORITY_ASYNC_WRITE,
 			    ZIO_FLAG_IO_REPAIR | (unexpected_errors ?
 			    ZIO_FLAG_SELF_HEAL : 0), NULL, NULL));

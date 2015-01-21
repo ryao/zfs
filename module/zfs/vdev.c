@@ -941,16 +941,18 @@ vdev_probe_done(zio_t *zio)
 			vps->vps_readable = 1;
 		if (zio->io_error == 0 && spa_writeable(spa)) {
 			zio_nowait(zio_write_phys(vd->vdev_probe_zio, vd,
-			    zio->io_offset, zio->io_size, zio->io_data,
-			    ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
+			    zio->io_offset, zio->io_size, (zio->io_data + zio->io_data_offset),
+			    0, ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
 			    ZIO_PRIORITY_SYNC_WRITE, vps->vps_flags, B_TRUE));
 		} else {
-			zio_buf_free(zio->io_data, zio->io_size);
+			zio_buf_free((zio->io_data + zio->io_data_offset),
+				     zio->io_size);
 		}
 	} else if (zio->io_type == ZIO_TYPE_WRITE) {
 		if (zio->io_error == 0)
 			vps->vps_writeable = 1;
-		zio_buf_free(zio->io_data, zio->io_size);
+		zio_buf_free((zio->io_data + zio->io_data_offset),
+			     zio->io_size);
 	} else if (zio->io_type == ZIO_TYPE_NULL) {
 		zio_t *pio;
 
@@ -1068,7 +1070,7 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 		    vdev_label_offset(vd->vdev_psize, l,
 		    offsetof(vdev_label_t, vl_pad2)),
 		    VDEV_PAD_SIZE, zio_buf_alloc(VDEV_PAD_SIZE),
-		    ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
+		    0, ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
 		    ZIO_PRIORITY_SYNC_READ, vps->vps_flags, B_TRUE));
 	}
 

@@ -2953,7 +2953,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		void *contents = (data != NULL) ? data->b_data : NULL;
 
 		dr->dr_zio = zio_write(zio, os->os_spa, txg,
-		    db->db_blkptr, contents, db->db.db_size, &zp,
+		    db->db_blkptr, contents, 0, db->db.db_size, &zp,
 		    dbuf_write_override_ready, NULL, dbuf_write_override_done,
 		    dr, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 		mutex_enter(&db->db_mtx);
@@ -2964,7 +2964,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 	} else if (db->db_state == DB_NOFILL) {
 		ASSERT(zp.zp_checksum == ZIO_CHECKSUM_OFF);
 		dr->dr_zio = zio_write(zio, os->os_spa, txg,
-		    db->db_blkptr, NULL, db->db.db_size, &zp,
+		    db->db_blkptr, NULL, 0, db->db.db_size, &zp,
 		    dbuf_write_nofill_ready, NULL, dbuf_write_nofill_done, db,
 		    ZIO_PRIORITY_ASYNC_WRITE,
 		    ZIO_FLAG_MUSTSUCCEED | ZIO_FLAG_NODATA, &zb);

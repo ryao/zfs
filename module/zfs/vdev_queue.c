@@ -469,13 +469,15 @@ static void
 vdev_queue_agg_io_done(zio_t *aio)
 {
 	vdev_queue_t *vq = &aio->io_vd->vdev_queue;
-	vdev_io_t *vi = aio->io_data;
+	vdev_io_t *vi = (aio->io_data + aio->io_data_offset);
 
 	if (aio->io_type == ZIO_TYPE_READ) {
 		zio_t *pio;
 		while ((pio = zio_walk_parents(aio)) != NULL) {
-			bcopy((char *)aio->io_data + (pio->io_offset -
-			    aio->io_offset), pio->io_data, pio->io_size);
+			bcopy((char *)(aio->io_data + aio->io_data_offset) + (pio->io_offset -
+			    aio->io_offset),
+			      (pio->io_data + pio->io_data_offset),
+			      pio->io_size);
 		}
 	}
 

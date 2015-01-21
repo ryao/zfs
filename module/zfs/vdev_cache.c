@@ -206,7 +206,8 @@ vdev_cache_hit(vdev_cache_t *vc, vdev_cache_entry_t *ve, zio_t *zio)
 	}
 
 	ve->ve_hits++;
-	bcopy(ve->ve_data + cache_phase, zio->io_data, zio->io_size);
+	bcopy(ve->ve_data + cache_phase, (zio->io_data + zio->io_data_offset),
+	      zio->io_size);
 }
 
 /*
@@ -357,7 +358,7 @@ vdev_cache_write(zio_t *zio)
 		if (ve->ve_fill_io != NULL) {
 			ve->ve_missed_update = 1;
 		} else {
-			bcopy((char *)zio->io_data + start - io_start,
+			bcopy((char *)(zio->io_data + zio->io_data_offset) + start - io_start,
 			    ve->ve_data + start - ve->ve_offset, end - start);
 		}
 		ve = AVL_NEXT(&vc->vc_offset_tree, ve);

@@ -151,7 +151,8 @@ vdev_file_io_strategy(void *arg)
 	ssize_t resid;
 
 	zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
-	    UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
+	    UIO_READ : UIO_WRITE, vf->vf_vnode,
+				(zio->io_data + zio->io_data_offset),
 	    zio->io_size, zio->io_offset, UIO_SYSSPACE,
 	    0, RLIM64_INFINITY, kcred, &resid);
 

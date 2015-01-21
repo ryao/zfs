@@ -1538,7 +1538,7 @@ dmu_sync_late_arrival(zio_t *pio, objset_t *os, dmu_sync_cb_t *done, zgd_t *zgd,
 	dsa->dsa_tx = tx;
 
 	zio_nowait(zio_write(pio, os->os_spa, dmu_tx_get_txg(tx), zgd->zgd_bp,
-	    zgd->zgd_db->db_data.zio_buf, zgd->zgd_db->db_size, zp,
+	    zgd->zgd_db->db_data.zio_buf, 0, zgd->zgd_db->db_size, zp,
 	    dmu_sync_late_arrival_ready, NULL, dmu_sync_late_arrival_done, dsa,
 	    ZIO_PRIORITY_SYNC_WRITE, ZIO_FLAG_CANFAIL|ZIO_FLAG_FASTWRITE, zb));
 

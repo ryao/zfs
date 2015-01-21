@@ -3878,7 +3878,7 @@ arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
 	callback->awcb_private = private;
 	callback->awcb_buf = buf;
 
-	zio = zio_write(pio, spa, txg, bp, buf->b_data, hdr->b_size, zp,
+	zio = zio_write(pio, spa, txg, bp, buf->b_data, 0, hdr->b_size, zp,
 	    arc_write_ready, arc_write_physdone, arc_write_done, callback,
 	    priority, zio_flags, zb);
 
@@ -5230,7 +5230,7 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 		 */
 		ASSERT(hdr->b_buf != NULL);
 		bzero(hdr->b_buf->b_data, hdr->b_size);
-		zio->io_data = zio->io_orig_data = hdr->b_buf->b_data;
+		(zio->io_data + zio->io_data_offset) = zio->io_orig_data = hdr->b_buf->b_data;
 	} else {
 		ASSERT(zio->io_data != NULL);
 		/*
@@ -5245,8 +5245,8 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 		 */
 		csize = zio->io_size;
 		cdata = zio_data_buf_alloc(csize);
-		bcopy(zio->io_data, cdata, csize);
-		if (zio_decompress_data(c, cdata, zio->io_data, csize,
+		bcopy((zio->io_data + zio->io_data_offset), cdata, csize);
+		if (zio_decompress_data(c, cdata, (zio->io_data + zio->io_data_offset), csize,
 		    hdr->b_size) != 0)
 			zio->io_error = SET_ERROR(EIO);
 		zio_data_buf_free(cdata, csize);
