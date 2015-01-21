@@ -3368,7 +3368,7 @@ top:
 					    ZIO_FLAG_DONT_RETRY);
 				} else {
 					rzio = zio_read_phys(pio, vd, addr,
-					    b_asize, buf->b_data,
+					    b_asize, buf->b_data, 0,
 					    ZIO_CHECKSUM_OFF,
 					    l2arc_read_done, cb, priority,
 					    zio_flags | ZIO_FLAG_DONT_CACHE |
@@ -3408,7 +3408,7 @@ top:
 			}
 		}
 
-		rzio = zio_read(pio, spa, bp, buf->b_data, size,
+		rzio = zio_read(pio, spa, bp, buf->b_data, 0, size,
 		    arc_read_done, buf, priority, zio_flags, zb);
 
 		if (*arc_flags & ARC_WAIT) {
@@ -4679,7 +4679,7 @@ l2arc_read_done(zio_t *zio)
 			ASSERT(!pio || pio->io_child_type == ZIO_CHILD_LOGICAL);
 
 			zio_nowait(zio_read(pio, cb->l2rcb_spa, &cb->l2rcb_bp,
-			    buf->b_data, zio->io_size, arc_read_done, buf,
+			    buf->b_data, 0, zio->io_size, arc_read_done, buf,
 			    zio->io_priority, cb->l2rcb_flags, &cb->l2rcb_zb));
 		}
 	}
@@ -5082,7 +5082,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 			uint64_t buf_p_sz;
 
 			wzio = zio_write_phys(pio, dev->l2ad_vdev,
-			    dev->l2ad_hand, buf_sz, buf_data, ZIO_CHECKSUM_OFF,
+			    dev->l2ad_hand, buf_sz, buf_data, 0, ZIO_CHECKSUM_OFF,
 			    NULL, NULL, ZIO_PRIORITY_ASYNC_WRITE,
 			    ZIO_FLAG_CANFAIL, B_FALSE);
 
@@ -5230,7 +5230,7 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 		 */
 		ASSERT(hdr->b_buf != NULL);
 		bzero(hdr->b_buf->b_data, hdr->b_size);
-		(zio->io_data + zio->io_data_offset) = zio->io_orig_data = hdr->b_buf->b_data;
+		zio->io_data = zio->io_orig_data = hdr->b_buf->b_data;
 	} else {
 		ASSERT(zio->io_data != NULL);
 		/*

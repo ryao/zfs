@@ -310,12 +310,13 @@ zio_vdev_free(void *buf)
  * ==========================================================================
  */
 static void
-zio_push_transform(zio_t *zio, void *data, uint64_t size, uint64_t bufsize,
-	zio_transform_func_t *transform)
+zio_push_transform(zio_t *zio, void *data, uint32_t data_offset, uint64_t size,
+        uint64_t bufsize, zio_transform_func_t *transform)
 {
 	zio_transform_t *zt = kmem_alloc(sizeof (zio_transform_t), KM_PUSHPAGE);
 
-	zt->zt_orig_data = (zio->io_data + zio->io_data_offset);
+	zt->zt_orig_data = zio->io_data;
+	zt->zt_orig_data_offset = zio->io_data_offset;
 	zt->zt_orig_size = zio->io_size;
 	zt->zt_bufsize = bufsize;
 	zt->zt_transform = transform;
@@ -323,7 +324,8 @@ zio_push_transform(zio_t *zio, void *data, uint64_t size, uint64_t bufsize,
 	zt->zt_next = zio->io_transform_stack;
 	zio->io_transform_stack = zt;
 
-	(zio->io_data + zio->io_data_offset) = data;
+	zio->io_data = data;
+	zio->io_data_offset = data_offset;
 	zio->io_size = size;
 }
 
@@ -334,15 +336,16 @@ zio_pop_transforms(zio_t *zio)
 
 	while ((zt = zio->io_transform_stack) != NULL) {
 		if (zt->zt_transform != NULL)
-			zt->zt_transform(zio,
-			    zt->zt_orig_data, zt->zt_orig_size);
+			zt->zt_transform(zio, zt->zt_orig_data +
+			    zt->zt_orig_data_offset, zt->zt_orig_size);
 
 		if (zt->zt_bufsize != 0)
 			zio_buf_free((zio->io_data + zio->io_data_offset),
 				     zt->zt_bufsize);
 
-		(zio->io_data + zio->io_data_offset) = zt->zt_orig_data;
+		zio->io_data = zt->zt_orig_data;
 		zio->io_size = zt->zt_orig_size;
+		zio->io_data_offset = zt->zt_orig_data_offset;
 		zio->io_transform_stack = zt->zt_next;
 
 		kmem_free(zt, sizeof (zio_transform_t));
@@ -914,9 +917,9 @@ zio_write_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
 	    offset >= vd->vdev_psize - VDEV_LABEL_END_SIZE);
 	ASSERT3U(offset + size, <=, vd->vdev_psize);
 
-	zio = zio_create(pio, vd->vdev_spa, 0, NULL, data, size, done, private,
-	    ZIO_TYPE_WRITE, priority, flags | ZIO_FLAG_PHYSICAL, vd, offset,
-	    NULL, ZIO_STAGE_OPEN, ZIO_WRITE_PHYS_PIPELINE);
+	zio = zio_create(pio, vd->vdev_spa, 0, NULL, data, data_offset, size,
+	    done, private, ZIO_TYPE_WRITE, priority, flags | ZIO_FLAG_PHYSICAL,
+	    vd, offset, NULL, ZIO_STAGE_OPEN, ZIO_WRITE_PHYS_PIPELINE);
 
 	zio->io_prop.zp_checksum = checksum;
 
@@ -928,8 +931,8 @@ zio_write_phys(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
 		 * being written to multiple places in parallel.
 		 */
 		void *wbuf = zio_buf_alloc(size);
-		bcopy(data, wbuf, size);
-		zio_push_transform(zio, wbuf, size, size, NULL);
+		bcopy(data + data_offset, wbuf, size);
+		zio_push_transform(zio, wbuf, 0, size, size, NULL);
 	}
 
 	return (zio);
@@ -1045,7 +1048,7 @@ zio_read_bp_init(zio_t *zio)
 		    BP_IS_EMBEDDED(bp) ? BPE_GET_PSIZE(bp) : BP_GET_PSIZE(bp);
 		void *cbuf = zio_buf_alloc(psize);
 
-		zio_push_transform(zio, cbuf, psize, psize, zio_decompress);
+		zio_push_transform(zio, cbuf, 0, psize, psize, zio_decompress);
 	}
 
 	if (BP_IS_EMBEDDED(bp) && BPE_GET_ETYPE(bp) == BP_EMBEDDED_TYPE_DATA) {
@@ -1191,7 +1194,7 @@ zio_write_bp_init(zio_t *zio)
 				compress = ZIO_COMPRESS_OFF;
 				zio_buf_free(cbuf, lsize);
 			} else {
-				zio_push_transform(zio, cbuf,
+				zio_push_transform(zio, cbuf, 0,
 				    psize, lsize, NULL);
 			}
 		}
@@ -2403,7 +2406,7 @@ zio_ddt_write(zio_t *zio)
 		    NULL, zio_ddt_ditto_write_done, dde, zio->io_priority,
 		    ZIO_DDT_CHILD_FLAGS(zio), &zio->io_bookmark);
 
-		zio_push_transform(dio, (zio->io_data + zio->io_data_offset),
+		zio_push_transform(dio, zio->io_data, zio->io_data_offset,
 				   zio->io_size, 0, NULL);
 		dde->dde_lead_zio[DDT_PHYS_DITTO] = dio;
 	}
@@ -2427,7 +2430,7 @@ zio_ddt_write(zio_t *zio)
 		    dde, zio->io_priority, ZIO_DDT_CHILD_FLAGS(zio),
 		    &zio->io_bookmark);
 
-		zio_push_transform(cio, (zio->io_data + zio->io_data_offset),
+		zio_push_transform(cio, zio->io_data, zio->io_data_offset,
 				   zio->io_size, 0, NULL);
 		dde->dde_lead_zio[p] = cio;
 	}
@@ -2675,7 +2678,7 @@ zio_vdev_io_start(zio_t *zio)
 			      zio->io_size);
 			bzero(abuf + zio->io_size, asize - zio->io_size);
 		}
-		zio_push_transform(zio, abuf, asize, asize, zio_subblock);
+		zio_push_transform(zio, abuf, 0, asize, asize, zio_subblock);
 	}
 
 	/*

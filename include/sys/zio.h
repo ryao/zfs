@@ -357,6 +357,7 @@ typedef void zio_transform_func_t(zio_t *zio, void *data, uint64_t size);
 
 typedef struct zio_transform {
 	void			*zt_orig_data;
+	uint32_t		zt_orig_data_offset;
 	uint64_t		zt_orig_size;
 	uint64_t		zt_bufsize;
 	zio_transform_func_t	*zt_transform;
@@ -466,7 +467,7 @@ extern zio_t *zio_root(spa_t *spa,
     zio_done_func_t *done, void *private, enum zio_flag flags);
 
 extern zio_t *zio_read(zio_t *pio, spa_t *spa, const blkptr_t *bp, void *data,
-    uint64_t size, uint32_t data_offset, zio_done_func_t *done, void *private,
+    uint32_t data_offset, uint64_t size, zio_done_func_t *done, void *private,
     zio_priority_t priority, enum zio_flag flags, const zbookmark_phys_t *zb);
 
 extern zio_t *zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,

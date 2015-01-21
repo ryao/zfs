@@ -630,7 +630,7 @@ vdev_queue_aggregate(vdev_queue_t *vq, zio_t *zio)
 	ASSERT3U(size, <=, zfs_vdev_aggregation_limit);
 
 	aio = zio_vdev_delegated_io(first->io_vd, first->io_offset,
-	    vi, size, first->io_type, zio->io_priority,
+	    vi, size, 0, first->io_type, zio->io_priority,
 	    flags | ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_QUEUE,
 	    vdev_queue_agg_io_done, NULL);
 	aio->io_timestamp = first->io_timestamp;

@@ -1816,7 +1816,7 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 		if (ddi_get_lbolt64() - spa->spa_last_io <= zfs_scan_idle)
 			delay(scan_delay);
 
-		zio_nowait(zio_read(NULL, spa, bp, data, size,
+		zio_nowait(zio_read(NULL, spa, bp, data, 0, size,
 		    dsl_scan_scrub_done, NULL, ZIO_PRIORITY_SCRUB,
 		    zio_flags, zb));
 	}

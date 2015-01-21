@@ -1589,7 +1589,7 @@ vdev_raidz_io_start(zio_t *zio)
 			rc = &rm->rm_col[c];
 			cvd = vd->vdev_child[rc->rc_devidx];
 			zio_nowait(zio_vdev_child_io(zio, NULL, cvd,
-			    rc->rc_offset, rc->rc_data, rc->rc_size,
+			    rc->rc_offset, rc->rc_data, 0, rc->rc_size,
 			    zio->io_type, zio->io_priority, 0,
 			    vdev_raidz_child_done, rc));
 		}
@@ -1605,7 +1605,7 @@ vdev_raidz_io_start(zio_t *zio)
 			rc = &rm->rm_col[c];
 			cvd = vd->vdev_child[rc->rc_devidx];
 			zio_nowait(zio_vdev_child_io(zio, NULL, cvd,
-			    rc->rc_offset + rc->rc_size, NULL,
+			    rc->rc_offset + rc->rc_size, NULL, 0,
 			    1 << tvd->vdev_ashift,
 			    zio->io_type, zio->io_priority,
 			    ZIO_FLAG_NODATA | ZIO_FLAG_OPTIONAL, NULL, NULL));
@@ -1645,7 +1645,7 @@ vdev_raidz_io_start(zio_t *zio)
 		if (c >= rm->rm_firstdatacol || rm->rm_missingdata > 0 ||
 		    (zio->io_flags & (ZIO_FLAG_SCRUB | ZIO_FLAG_RESILVER))) {
 			zio_nowait(zio_vdev_child_io(zio, NULL, cvd,
-			    rc->rc_offset, rc->rc_data, rc->rc_size,
+			    rc->rc_offset, rc->rc_data, 0, rc->rc_size,
 			    zio->io_type, zio->io_priority, 0,
 			    vdev_raidz_child_done, rc));
 		}
