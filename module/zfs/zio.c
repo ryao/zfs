@@ -340,7 +340,7 @@ zio_pop_transforms(zio_t *zio)
 			    zt->zt_orig_data_offset, zt->zt_orig_size);
 
 		if (zt->zt_bufsize != 0)
-			zio_buf_free((zio->io_data + zio->io_data_offset),
+			zio_buf_free(((char *)zio->io_data + zio->io_data_offset),
 				     zt->zt_bufsize);
 
 		zio->io_data = zt->zt_orig_data;
@@ -363,7 +363,8 @@ zio_subblock(zio_t *zio, void *data, uint64_t size)
 	ASSERT(zio->io_size > size);
 
 	if (zio->io_type == ZIO_TYPE_READ)
-		bcopy((zio->io_data + zio->io_data_offset), data, size);
+		bcopy(((char *)zio->io_data + zio->io_data_offset), data,
+		      size);
 }
 
 static void
@@ -371,7 +372,7 @@ zio_decompress(zio_t *zio, void *data, uint64_t size)
 {
 	if (zio->io_error == 0 &&
 	    zio_decompress_data(BP_GET_COMPRESS(zio->io_bp),
-	    (zio->io_data + zio->io_data_offset), data, zio->io_size, size) != 0)
+	    ((char *)zio->io_data + zio->io_data_offset), data, zio->io_size, size) != 0)
 		zio->io_error = SET_ERROR(EIO);
 }
 
@@ -1054,7 +1055,7 @@ zio_read_bp_init(zio_t *zio)
 	if (BP_IS_EMBEDDED(bp) && BPE_GET_ETYPE(bp) == BP_EMBEDDED_TYPE_DATA) {
 		zio->io_pipeline = ZIO_INTERLOCK_PIPELINE;
 		decode_embedded_bp_compressed(bp,
-					      (zio->io_data + zio->io_data_offset));
+					      ((char *)zio->io_data + zio->io_data_offset));
 	} else {
 		ASSERT(!BP_IS_EMBEDDED(bp));
 	}
@@ -1160,7 +1161,7 @@ zio_write_bp_init(zio_t *zio)
 	if (compress != ZIO_COMPRESS_OFF) {
 		void *cbuf = zio_buf_alloc(lsize);
 		psize = zio_compress_data(compress,
-					  (zio->io_data + zio->io_data_offset),
+					  ((char *)zio->io_data + zio->io_data_offset),
 					  cbuf, lsize);
 		if (psize == 0 || psize == lsize) {
 			compress = ZIO_COMPRESS_OFF;
@@ -1832,7 +1833,7 @@ zio_gang_tree_assemble_done(zio_t *zio)
 		return;
 
 	if (BP_SHOULD_BYTESWAP(bp))
-		byteswap_uint64_array((zio->io_data + zio->io_data_offset),
+		byteswap_uint64_array(((char *)zio->io_data + zio->io_data_offset),
 				      zio->io_size);
 
 	ASSERT(zio->io_data == gn->gn_gbh);
@@ -1911,7 +1912,7 @@ zio_gang_issue(zio_t *zio)
 
 	if (zio->io_child_error[ZIO_CHILD_GANG] == 0)
 		zio_gang_tree_issue(zio, zio->io_gang_tree, bp,
-				    (zio->io_data + zio->io_data_offset));
+				    ((char *)zio->io_data + zio->io_data_offset));
 	else
 		zio_gang_tree_free(&zio->io_gang_tree);
 
@@ -2012,7 +2013,7 @@ zio_write_gang_block(zio_t *pio)
 		zp.zp_nopwrite = B_FALSE;
 
 		zio_nowait(zio_write(zio, spa, txg, &gbh->zg_blkptr[g],
-		    (char *)(pio->io_data + pio->io_data_offset) + (pio->io_size - resid), 0, lsize, &zp,
+		    (char *)((char *)pio->io_data + pio->io_data_offset) + (pio->io_size - resid), 0, lsize, &zp,
 		    zio_write_gang_member_ready, NULL, NULL, &gn->gn_child[g],
 		    pio->io_priority, ZIO_GANG_CHILD_FLAGS(pio),
 		    &pio->io_bookmark));
@@ -2107,9 +2108,9 @@ zio_ddt_child_read_done(zio_t *zio)
 	if (zio->io_error == 0)
 		ddt_phys_clear(ddp);	/* this ddp doesn't need repair */
 	if (zio->io_error == 0 && dde->dde_repair_data == NULL)
-		dde->dde_repair_data = (zio->io_data + zio->io_data_offset);
+		dde->dde_repair_data = ((char *)zio->io_data + zio->io_data_offset);
 	else
-		zio_buf_free((zio->io_data + zio->io_data_offset),
+		zio_buf_free(((char *)zio->io_data + zio->io_data_offset),
 			     zio->io_size);
 	mutex_exit(&pio->io_lock);
 }
@@ -2152,7 +2153,7 @@ zio_ddt_read_start(zio_t *zio)
 	}
 
 	zio_nowait(zio_read(zio, zio->io_spa, bp,
-	    (zio->io_data + zio->io_data_offset), 0, zio->io_size, NULL, NULL, zio->io_priority,
+	    ((char *)zio->io_data + zio->io_data_offset), 0, zio->io_size, NULL, NULL, zio->io_priority,
 	    ZIO_DDT_CHILD_FLAGS(zio), &zio->io_bookmark));
 
 	return (ZIO_PIPELINE_CONTINUE);
@@ -2184,7 +2185,7 @@ zio_ddt_read_done(zio_t *zio)
 		}
 		if (dde->dde_repair_data != NULL) {
 			bcopy(dde->dde_repair_data,
-			      (zio->io_data + zio->io_data_offset),
+			      ((char *)zio->io_data + zio->io_data_offset),
 			      zio->io_size);
 			zio->io_child_error[ZIO_CHILD_DDT] = 0;
 		}
@@ -2674,7 +2675,8 @@ zio_vdev_io_start(zio_t *zio)
 		char *abuf = zio_buf_alloc(asize);
 		ASSERT(vd == vd->vdev_top);
 		if (zio->io_type == ZIO_TYPE_WRITE) {
-			bcopy((zio->io_data + zio->io_data_offset), abuf,
+			bcopy(((char *)zio->io_data + zio->io_data_offset),
+			      abuf,
 			      zio->io_size);
 			bzero(abuf + zio->io_size, asize - zio->io_size);
 		}
@@ -2801,7 +2803,8 @@ zio_vsd_default_cksum_report(zio_t *zio, zio_cksum_report_t *zcr, void *ignored)
 {
 	void *buf = zio_buf_alloc(zio->io_size);
 
-	bcopy((zio->io_data + zio->io_data_offset), buf, zio->io_size);
+	bcopy(((char *)zio->io_data + zio->io_data_offset), buf,
+	      zio->io_size);
 
 	zcr->zcr_cbinfo = zio->io_size;
 	zcr->zcr_cbdata = buf;
@@ -2936,7 +2939,7 @@ zio_checksum_generate(zio_t *zio)
 	}
 
 	zio_checksum_compute(zio, checksum,
-			     (zio->io_data + zio->io_data_offset),
+			     ((char *)zio->io_data + zio->io_data_offset),
 			     zio->io_size);
 
 	return (ZIO_PIPELINE_CONTINUE);

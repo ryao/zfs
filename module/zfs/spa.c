@@ -1866,7 +1866,8 @@ spa_load_verify_done(zio_t *zio)
 		else
 			atomic_add_64(&sle->sle_data_count, 1);
 	}
-	zio_data_buf_free((zio->io_data + zio->io_data_offset), zio->io_size);
+	zio_data_buf_free(((char *)zio->io_data + zio->io_data_offset),
+			  zio->io_size);
 
 	mutex_enter(&spa->spa_scrub_lock);
 	spa->spa_scrub_inflight--;

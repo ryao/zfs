@@ -941,17 +941,17 @@ vdev_probe_done(zio_t *zio)
 			vps->vps_readable = 1;
 		if (zio->io_error == 0 && spa_writeable(spa)) {
 			zio_nowait(zio_write_phys(vd->vdev_probe_zio, vd,
-			    zio->io_offset, zio->io_size, (zio->io_data + zio->io_data_offset),
+			    zio->io_offset, zio->io_size, ((char *)zio->io_data + zio->io_data_offset),
 			    0, ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
 			    ZIO_PRIORITY_SYNC_WRITE, vps->vps_flags, B_TRUE));
 		} else {
-			zio_buf_free((zio->io_data + zio->io_data_offset),
+			zio_buf_free(((char *)zio->io_data + zio->io_data_offset),
 				     zio->io_size);
 		}
 	} else if (zio->io_type == ZIO_TYPE_WRITE) {
 		if (zio->io_error == 0)
 			vps->vps_writeable = 1;
-		zio_buf_free((zio->io_data + zio->io_data_offset),
+		zio_buf_free(((char *)zio->io_data + zio->io_data_offset),
 			     zio->io_size);
 	} else if (zio->io_type == ZIO_TYPE_NULL) {
 		zio_t *pio;

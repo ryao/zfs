@@ -713,7 +713,7 @@ vdev_disk_io_start(zio_t *zio)
 	}
 
 	error = __vdev_disk_physio(vd->vd_bdev, zio,
-				   (zio->io_data + zio->io_data_offset),
+				   ((char *)zio->io_data + zio->io_data_offset),
 	    zio->io_size, zio->io_offset, flags);
 	if (error) {
 		zio->io_error = error;

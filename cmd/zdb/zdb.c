@@ -2315,7 +2315,8 @@ zdb_blkptr_done(zio_t *zio)
 	zdb_cb_t *zcb = zio->io_private;
 	zbookmark_phys_t *zb = &zio->io_bookmark;
 
-	zio_data_buf_free((zio->io_data + zio->io_data_offset), zio->io_size);
+	zio_data_buf_free(((char *)zio->io_data + zio->io_data_offset),
+			  zio->io_size);
 
 	mutex_enter(&spa->spa_scrub_lock);
 	spa->spa_scrub_inflight--;

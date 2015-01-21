@@ -197,7 +197,7 @@ zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info)
 	uint64_t size = (bp == NULL ? zio->io_size :
 	    (BP_IS_GANG(bp) ? SPA_GANGBLOCKSIZE : BP_GET_PSIZE(bp)));
 	uint64_t offset = zio->io_offset;
-	void *data = (zio->io_data + zio->io_data_offset);
+	void *data = ((char *)zio->io_data + zio->io_data_offset);
 	zio_checksum_info_t *ci = &zio_checksum_table[checksum];
 	zio_cksum_t actual_cksum, expected_cksum, verifier;
 

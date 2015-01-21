@@ -5245,8 +5245,9 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 		 */
 		csize = zio->io_size;
 		cdata = zio_data_buf_alloc(csize);
-		bcopy((zio->io_data + zio->io_data_offset), cdata, csize);
-		if (zio_decompress_data(c, cdata, (zio->io_data + zio->io_data_offset), csize,
+		bcopy(((char *)zio->io_data + zio->io_data_offset), cdata,
+		      csize);
+		if (zio_decompress_data(c, cdata, ((char *)zio->io_data + zio->io_data_offset), csize,
 		    hdr->b_size) != 0)
 			zio->io_error = SET_ERROR(EIO);
 		zio_data_buf_free(cdata, csize);
