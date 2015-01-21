@@ -1686,18 +1686,20 @@ zio_resume_wait(spa_t *spa)
  */
 
 static zio_t *
-zio_read_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
+zio_read_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data,
+    uint32_t offset)
 {
 	if (gn != NULL)
 		return (pio);
 
-	return (zio_read(pio, pio->io_spa, bp, data, 0, BP_GET_PSIZE(bp),
+	return (zio_read(pio, pio->io_spa, bp, data, offset, BP_GET_PSIZE(bp),
 	    NULL, NULL, pio->io_priority, ZIO_GANG_CHILD_FLAGS(pio),
 	    &pio->io_bookmark));
 }
 
 zio_t *
-zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
+zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data,
+    uint32_t offset)
 {
 	zio_t *zio;
 
@@ -1727,7 +1729,7 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 			zio->io_pipeline &= ~ZIO_VDEV_IO_STAGES;
 	} else {
 		zio = zio_rewrite(pio, pio->io_spa, pio->io_txg, bp,
-		    data, 0, BP_GET_PSIZE(bp), NULL, NULL,
+		    data, offset, BP_GET_PSIZE(bp), NULL, NULL,
 				  pio->io_priority,
 		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark);
 	}
@@ -1737,7 +1739,8 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 
 /* ARGSUSED */
 zio_t *
-zio_free_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
+zio_free_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data,
+    uint32_t offset)
 {
 	return (zio_free_sync(pio, pio->io_spa, pio->io_txg, bp,
 	    ZIO_GANG_CHILD_FLAGS(pio)));
@@ -1745,7 +1748,8 @@ zio_free_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 
 /* ARGSUSED */
 zio_t *
-zio_claim_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
+zio_claim_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data,
+    uint32_t offset)
 {
 	return (zio_claim(pio, pio->io_spa, pio->io_txg, bp,
 	    NULL, NULL, ZIO_GANG_CHILD_FLAGS(pio)));
@@ -1849,7 +1853,8 @@ zio_gang_tree_assemble_done(zio_t *zio)
 }
 
 static void
-zio_gang_tree_issue(zio_t *pio, zio_gang_node_t *gn, blkptr_t *bp, void *data)
+zio_gang_tree_issue(zio_t *pio, zio_gang_node_t *gn, blkptr_t *bp, void *data,
+    uint32_t offset)
 {
 	zio_t *gio = pio->io_gang_leader;
 	zio_t *zio;
@@ -1863,7 +1868,7 @@ zio_gang_tree_issue(zio_t *pio, zio_gang_node_t *gn, blkptr_t *bp, void *data)
 	 * If you're a gang header, your data is in gn->gn_gbh.
 	 * If you're a gang member, your data is in 'data' and gn == NULL.
 	 */
-	zio = zio_gang_issue_func[gio->io_type](pio, bp, gn, data);
+	zio = zio_gang_issue_func[gio->io_type](pio, bp, gn, data, offset);
 
 	if (gn != NULL) {
 		ASSERT(gn->gn_gbh->zg_tail.zec_magic == ZEC_MAGIC);
@@ -1872,13 +1877,19 @@ zio_gang_tree_issue(zio_t *pio, zio_gang_node_t *gn, blkptr_t *bp, void *data)
 			blkptr_t *gbp = &gn->gn_gbh->zg_blkptr[g];
 			if (BP_IS_HOLE(gbp))
 				continue;
-			zio_gang_tree_issue(zio, gn->gn_child[g], gbp, data);
-			data = (char *)data + BP_GET_PSIZE(gbp);
+			zio_gang_tree_issue(zio, gn->gn_child[g], gbp, data,
+			    offset);
+			offset += BP_GET_PSIZE(gbp);
 		}
 	}
 
+	/*
+	 * XXX: This will incorrectly fail should we be called with a non-zero
+	 * offset from zio_gang_issue(). If we trip it, we should rework this.
+	 * Otherwise, it is fine for early development.
+	 */
 	if (gn == gio->io_gang_tree)
-		ASSERT3P((char *)gio->io_data + gio->io_size, ==, data);
+		ASSERT3P(gio->io_size, ==, offset);
 
 	if (zio != pio)
 		zio_nowait(zio);
@@ -1912,7 +1923,7 @@ zio_gang_issue(zio_t *zio)
 
 	if (zio->io_child_error[ZIO_CHILD_GANG] == 0)
 		zio_gang_tree_issue(zio, zio->io_gang_tree, bp,
-				    ((char *)zio->io_data + zio->io_data_offset));
+		    zio->io_data, zio->io_data_offset);
 	else
 		zio_gang_tree_free(&zio->io_gang_tree);
 

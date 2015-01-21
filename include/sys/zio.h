@@ -351,7 +351,7 @@ typedef struct zio_gang_node {
 } zio_gang_node_t;
 
 typedef zio_t *zio_gang_issue_func_t(zio_t *zio, blkptr_t *bp,
-    zio_gang_node_t *gn, void *data);
+    zio_gang_node_t *gn, void *data, uint32_t offset);
 
 typedef void zio_transform_func_t(zio_t *zio, void *data, uint64_t size);
 
