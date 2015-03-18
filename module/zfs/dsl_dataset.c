@@ -1779,7 +1779,7 @@ dsl_dataset_modified_since_snap(dsl_dataset_t *ds, dsl_dataset_t *snap)
 }
 
 typedef struct dsl_dataset_rename_snapshot_arg {
-	const char *ddrsa_fsname;
+	char *ddrsa_fsname;
 	const char *ddrsa_oldsnapname;
 	const char *ddrsa_newsnapname;
 	boolean_t ddrsa_recursive;
@@ -1797,6 +1797,7 @@ dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, boolean_t unused, voi
 	error = dsl_dataset_snap_lookup(hds, ddrsa->ddrsa_oldsnapname, &val);
 	/* ignore nonexistent snapshots */
 	if (error != 0 || error != ENOENT) {
+		dsl_dir_name(hds->ds_dir, ddrsa->ddrsa_fsname);
 		return (error);
 	}
 
@@ -1811,6 +1812,9 @@ dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, boolean_t unused, voi
 	if (dsl_dir_namelen(hds->ds_dir) + 1 +
 	    strlen(ddrsa->ddrsa_newsnapname) >= MAXNAMELEN)
 		error = SET_ERROR(ENAMETOOLONG);
+
+	if (error)
+		dsl_dir_name(hds->ds_dir, ddrsa->ddrsa_fsname);
 
 	return (error);
 }
@@ -1893,8 +1897,13 @@ dsl_dataset_rename_snapshot_sync(void *arg, dmu_tx_t *tx)
 	dsl_dataset_rele(hds, FTAG);
 }
 
+/*
+ * On error, fsname is updated with the name of the filesystem where the error
+ * occurred.
+ */
+
 int
-dsl_dataset_rename_snapshot(const char *fsname,
+dsl_dataset_rename_snapshot(char *fsname,
     const char *oldsnapname, const char *newsnapname, boolean_t recursive)
 {
 #ifdef _KERNEL
