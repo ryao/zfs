@@ -5540,13 +5540,11 @@ static int
 zfs_stable_ioc_set_props(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl,
     nvlist_t *opts, uint64_t version)
 {
-	zprop_source_t source;
-	boolean_t received;
+	zprop_source_t source = ZPROP_SRC_LOCAL;
 	int error = 0;
 
-	received = nvlist_exists(opts, "received");
-	source = (received ? ZPROP_SRC_RECEIVED : ZPROP_SRC_LOCAL);
-	if (received) {
+	if (nvlist_exists(opts, "received")) {
+		source = ZPROP_SRC_RECEIVED;
 		nvlist_t *origprops;
 
 		if (dsl_prop_get_received(fsname, &origprops) == 0) {
