@@ -365,14 +365,7 @@ lzc_snaprange_space(const char *firstsnap, const char *lastsnap,
 boolean_t
 lzc_exists(const char *dataset)
 {
-	/*
-	 * The objset_stats ioctl is still legacy, so we need to construct our
-	 * own zfs_cmd_t rather than using zfsc_ioctl().
-	 */
-	zfs_cmd_t zc = {"\0"};
-
-	(void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	return (ioctl(g_fd, ZFS_IOC_OBJSET_STATS, &zc) == 0);
+	return (lzc_ioctl("zfs_exists", dataset, NULL, NULL, NULL, 0) == 0);
 }
 
 /*

@@ -6166,6 +6166,20 @@ zfs_stable_ioc_zfs_destroy(const char *fsname, nvlist_t *innvl,
 	    nvlist_exists(opts, "defer")));
 }
 
+static int
+zfs_stable_ioc_zfs_exists(const char *fsname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	objset_t *os;
+	int error;
+
+	error = dmu_objset_hold(fsname, FTAG, &os);
+	if (error == 0)
+		dmu_objset_rele(os, FTAG);
+
+	return (error);
+}
+
 /*
  * ioctl table for stable interface.
  * Functions use zfs_/zpool_ prefixes to distinguish between their uses
@@ -6339,6 +6353,14 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
+},
+{	.zvec_name		= "zfs_exists",
+	.zvec_func		= zfs_stable_ioc_zfs_exists,
+	.zvec_secpolicy		= zfs_secpolicy_read,
+	.zvec_namecheck		= DATASET_NAME,
+	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_FALSE,
 },
 };
 
