@@ -569,9 +569,8 @@ lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
 	/* zc_name is name of containing filesystem */
 	(void) strlcpy(zc.zc_name, snapname, sizeof (zc.zc_name));
 	atp = strchr(zc.zc_name, '@');
-	if (atp == NULL)
-		return (EINVAL);
-	*atp = '\0';
+	if (atp != NULL)
+		*atp = '\0';
 
 	/* if the fs does not exist, try its parent. */
 	if (!lzc_exists(zc.zc_name)) {
@@ -581,9 +580,6 @@ lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
 		*slashp = '\0';
 
 	}
-
-	/* zc_value is full name of the snapshot to create */
-	(void) strlcpy(zc.zc_value, snapname, sizeof (zc.zc_value));
 
 	if (props != NULL) {
 		/* zc_nvlist_src is props to set */
@@ -601,6 +597,20 @@ lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
 	if (error != 0)
 		goto out;
 	zc.zc_begin_record = drr.drr_u.drr_begin;
+
+	/* zc_value is full name of the snapshot to create */
+	(void) strlcpy(zc.zc_value, snapname, sizeof (zc.zc_value));
+
+	/* if snapshot name is not provided try to take it from the stream */
+	atp = strchr(zc.zc_value, '@');
+	if (atp == NULL) {
+		atp = strchr(zc.zc_begin_record.drr_toname, '@');
+		if (atp == NULL)
+			return (EINVAL);
+		if (strlen(zc.zc_value) + strlen(atp) >= sizeof(zc.zc_value))
+			return (ENAMETOOLONG);
+		strcat(zc.zc_value, atp);
+	}
 
 	/* zc_cookie is fd to read from */
 	zc.zc_cookie = fd;
