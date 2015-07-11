@@ -230,15 +230,11 @@ lzc_promote(const char *fsname, nvlist_t *opts)
 }
 
 int
-lzc_set_props(const char *fsname, nvlist_t *props, boolean_t received)
+lzc_set_props(const char *fsname, nvlist_t *props, nvlist_t *opts)
 {
 	int error;
-	nvlist_t *opts = fnvlist_alloc();
 
-	if (received)
-		fnvlist_add_boolean(opts, "received");
 	error = lzc_ioctl("zfs_set_props", fsname, props, opts, NULL, 0);
-	nvlist_free(opts);
 	return (error);
 }
 
