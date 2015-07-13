@@ -2691,7 +2691,7 @@ retry:
 	}
 
 	if (!nvlist_empty(genericnvl) &&
-	    (rv = dsl_props_set(dsname, source, genericnvl)) != 0 &&
+	    dsl_props_set(dsname, source, genericnvl) != 0 &&
 	    atomic == B_FALSE) {
 		/*
 		 * If this fails, we still want to set as many properties as we
