@@ -230,11 +230,12 @@ lzc_promote(const char *fsname, nvlist_t *opts)
 }
 
 int
-lzc_set_props(const char *fsname, nvlist_t *props, nvlist_t *opts)
+lzc_set_props(const char *fsname, nvlist_t *props, nvlist_t *opts,
+    nvlist_t **errlist)
 {
 	int error;
 
-	error = lzc_ioctl("zfs_set_props", fsname, props, opts, NULL, 0);
+	error = lzc_ioctl("zfs_set_props", fsname, props, opts, errlist, 0);
 	return (error);
 }
 
