@@ -81,6 +81,7 @@
 #include <sys/zfs_vnops.h>
 #include <sys/stat.h>
 #include <sys/dmu.h>
+#include <sys/dsl_dataset.h>
 #include <sys/dsl_destroy.h>
 #include <sys/dsl_deleg.h>
 #include <sys/mount.h>
