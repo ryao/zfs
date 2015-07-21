@@ -3998,7 +3998,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	nvlist_t *origprops = NULL; /* existing properties */
 	char *origin = NULL;
 	char *tosnap;
-	char tofs[ZFS_MAXNAMELEN];
+	char tofs[MAXNAMELEN + 1];
 	boolean_t first_recvd_props = B_FALSE;
 
 	if (dataset_namecheck(zc->zc_value, NULL, NULL) != 0 ||
@@ -4006,7 +4006,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	    strchr(zc->zc_value, '%'))
 		return (SET_ERROR(EINVAL));
 
-	(void) strcpy(tofs, zc->zc_value);
+	(void) strlcpy(tofs, zc->zc_value, sizeof(tofs));
 	tosnap = strchr(tofs, '@');
 	*tosnap++ = '\0';
 
