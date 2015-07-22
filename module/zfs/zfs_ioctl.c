@@ -2651,6 +2651,19 @@ retry:
 		if (err == 0)
 			err = zfs_check_settable(dsname, pair, CRED());
 
+		/* Atomically setting old-style special properties is not supported */
+		switch (prop) {
+		case ZFS_PROP_VOLSIZE:
+		case ZFS_PROP_SNAPDEV:
+		case ZFS_PROP_VERSION:
+		default:
+			if (prop != ZPROP_INVAL ||
+			    zfs_prop_userquota(propname) == B_FALSE)
+				break;
+			if (atomic == B_TRUE)
+				err = SET_ERROR(ENOTSUP);
+		}
+
 		if (err == 0) {
 			nvlist_t *tnvl = NULL;
 			err = zfs_prop_set_special(dsname, source, pair);
@@ -5561,7 +5574,7 @@ zfs_stable_ioc_set_props(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl,
 
 	if (error == 0)
 		error = zfs_set_prop_nvlist(fsname, source, innvl, outnvl,
-		    B_TRUE);
+		    nvlist_exists(opts, "noatomic") == B_FALSE);
 
 	return (error);
 }
