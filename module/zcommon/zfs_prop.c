@@ -452,6 +452,8 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_DATASET, "OBJSETID");
 	zprop_register_hidden(ZFS_PROP_INCONSISTENT, "inconsistent",
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "INCONSISTENT");
+	zprop_register_hidden(ZFS_PROP_SALT, "salt",
+	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "SALT");
 
 	/*
 	 * Property to be removed once libbe is integrated

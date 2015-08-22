@@ -291,7 +291,8 @@ def get_typestring(t):
                     "DMU_OT_DEADLIST",
                     "DMU_OT_DEADLIST_HDR",
                     "DMU_OT_DSL_CLONES",
-                    "DMU_OT_BPOBJ_SUBOBJ"]
+                    "DMU_OT_BPOBJ_SUBOBJ",
+                    "DMU_OT_DSL_KEYCHAIN"]
 
     # If "-rr" option is used, don't convert to string representation
     if raw > 1:

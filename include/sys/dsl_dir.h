@@ -81,7 +81,8 @@ typedef struct dsl_dir_phys {
 	uint64_t dd_flags;
 	uint64_t dd_used_breakdown[DD_USED_NUM];
 	uint64_t dd_clones; /* dsl_dir objects */
-	uint64_t dd_pad[13]; /* pad out to 256 bytes for good measure */
+	uint64_t dd_keychain; /* DSL keychain object number */
+	uint64_t dd_pad[12]; /* pad out to 256 bytes for good measure */
 } dsl_dir_phys_t;
 
 struct dsl_dir {
@@ -103,6 +104,7 @@ struct dsl_dir {
 	/* Protected by dd_lock */
 	kmutex_t dd_lock;
 	list_t dd_prop_cbs; /* list of dsl_prop_cb_record_t's */
+	list_t dd_wrapkeys; /* list of wrapping keys */
 	timestruc_t dd_snap_cmtime; /* last time snapshot namespace changed */
 	uint64_t dd_origin_txg;
 
@@ -114,6 +116,59 @@ struct dsl_dir {
 	/* protected by dd_lock; keep at end of struct for better locality */
 	char dd_myname[MAXNAMELEN];
 };
+
+/*
+ * Based partly on the following documentation:
+ *
+ * https://blogs.oracle.com/darren/entry/zfs_encryption_what_is_on
+ *
+ * Also, GRUB2 sources were used as inspiration. The author who is also the
+ * GRUB2 maintainer said that was okay.
+ */
+
+enum dsl_dir_crypto_algo {
+	DDCA_CCM,
+	DDCA_GCM
+};
+
+/*
+ * A 128-bit nonce is calculated from the 96-bit IV in different ways for
+ * DDCA_CCM an DDCA_GCM.
+ *
+ * For DDCA_CCM, the bottom most byte is 42 while the 96-bit IV is mapped into
+ * the 12 bytes above it. The 3 remaining bytes are the size of the block in
+ * bytes.
+ *
+ * For DDCA_GCM, the upper-most byte is set to 1 while the other 3 bytes are
+ * set to 0.
+ *
+ * This is for on-disk data. The nonces for the wrapping keys are calculated
+ * slightly differently.
+ *
+ * The key length is calculated from the ddck_key field.
+ * If the top 16 bytes are all zero, then the key is 128-bit.
+ * If the top 8 bytes are zeroed, then the key is 192-bit.
+ * Otherwise, the key is 256-bit.
+ */
+
+typedef struct dsl_dir_crypto_key_impl {
+	uint8_t ddck_iv[12];
+	uint8_t ddck_pad[4];
+	uint8_t ddck_key[48];
+} dsl_dir_crypto_key_impl_t;
+
+typedef struct dsl_dir_key_phys
+{
+	enum dsl_dir_crypto_algo ddk_algorithm;
+	dsl_dir_crypto_key_impl_t ddk_key[2]; /* XXX: Why do we have two? */
+} dsl_dir_key_phys_t;
+
+/* We store computed wrapping keys in these entries */
+typedef struct dsl_dir_wrapping_key_entry {
+	list_node_t ddwke_node; /* list of keychain entries */
+	uint64_t ddwke_keylen; /* number of bytes used in ddk_key */
+	uint64_t ddwke_wrapkey[4];
+} dsl_dir_keychain_entry_t;
 
 static inline dsl_dir_phys_t *
 dsl_dir_phys(dsl_dir_t *dd)

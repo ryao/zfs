@@ -388,6 +388,9 @@ _NOTE(CONSTCOND) } while (0)
 #define	BP_GET_LEVEL(bp)		BF64_GET((bp)->blk_prop, 56, 5)
 #define	BP_SET_LEVEL(bp, x)		BF64_SET((bp)->blk_prop, 56, 5, x)
 
+#define	BP_GET_CRYPTO(bp)		BF64_GET((bp)->blk_prop, 61, 1)
+#define	BP_SET_CRYPTO(bp, x)		BF64_SET((bp)->blk_prop, 61, 1, x)
+
 #define	BP_GET_DEDUP(bp)		BF64_GET((bp)->blk_prop, 62, 1)
 #define	BP_SET_DEDUP(bp, x)		BF64_SET((bp)->blk_prop, 62, 1, x)
 
