@@ -27,6 +27,10 @@
 #include <sys/zio.h>
 #include <sys/zio_checksum.h>
 
+#if defined(_KERNEL) && defined(__linux__)
+#include <asm/cpufeature.h>
+#endif
+
 /*
  * SHA-256 checksum, as specified in FIPS 180-3, available at:
  * http://csrc.nist.gov/publications/PubsFIPS.html
@@ -72,6 +76,10 @@ static const uint32_t SHA256_K[64] = {
 
 static void
 SHA256Transform(uint32_t *H, const uint8_t *cp)
+    __attribute__((always_inline));
+
+static void
+SHA256Transform(uint32_t *H, const uint8_t *cp)
 {
 	uint32_t a, b, c, d, e, f, g, h, t, T1, T2, W[64];
 
@@ -96,32 +104,59 @@ SHA256Transform(uint32_t *H, const uint8_t *cp)
 	H[4] += e; H[5] += f; H[6] += g; H[7] += h;
 }
 
+#if defined(CONFIG_AS_AVX2) && defined (X86_FEATURE_AVX2)
+#pragma GCC push_options
+#pragma GCC optimize("O3")
+#pragma GCC option("avx2")
+#define zio_checksum_SHA256_GENERIC_impl zio_checksum_SHA256_avx2_impl
+#include "sha256_generic.c"
+#undef zio_checksum_SHA256_GENERIC_impl
+#pragma GCC pop_options
+#endif
+
+#if defined(CONFIG_AS_AVX) && defined (X86_FEATURE_AVX)
+#pragma GCC push_options
+#pragma GCC optimize("O3")
+#pragma GCC option("avx")
+#define zio_checksum_SHA256_GENERIC_impl zio_checksum_SHA256_avx_impl
+#include "sha256_generic.c"
+#undef zio_checksum_SHA256_GENERIC_impl
+#pragma GCC pop_options
+#endif
+
+#define zio_checksum_SHA256_GENERIC_impl zio_checksum_SHA256_generic_impl
+#include "sha256_generic.c"
+#undef zio_checksum_SHA256_GENERIC_impl
+
+void (*zio_checksum_SHA256_impl)(const void *buf, uint64_t size, zio_cksum_t *zcp) =
+    &zio_checksum_SHA256_generic_impl;
+
 void
 zio_checksum_SHA256(const void *buf, uint64_t size, zio_cksum_t *zcp)
 {
-	uint32_t H[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
-	uint8_t pad[128];
-	int i, padsize;
+#if defined(_KERNEL) && defined(__linux__)
+	kernel_fpu_begin();
+	(*zio_checksum_SHA256_impl)(buf, size, zcp);
+	kernel_fpu_end();
+#else
+	zio_checksum_SHA256_generic_impl(buf, size, zcp);
+#endif
+}
 
-	for (i = 0; i < (size & ~63ULL); i += 64)
-		SHA256Transform(H, (uint8_t *)buf + i);
-
-	for (padsize = 0; i < size; i++)
-		pad[padsize++] = *((uint8_t *)buf + i);
-
-	for (pad[padsize++] = 0x80; (padsize & 63) != 56; padsize++)
-		pad[padsize] = 0;
-
-	for (i = 56; i >= 0; i -= 8)
-		pad[padsize++] = (size << 3) >> i;
-
-	for (i = 0; i < padsize; i += 64)
-		SHA256Transform(H, pad + i);
-
-	ZIO_SET_CHECKSUM(zcp,
-	    (uint64_t)H[0] << 32 | H[1],
-	    (uint64_t)H[2] << 32 | H[3],
-	    (uint64_t)H[4] << 32 | H[5],
-	    (uint64_t)H[6] << 32 | H[7]);
+void
+zio_checksum_SHA256_init(void) {
+#if defined(_KERNEL) && defined(__linux__)
+#if defined(CONFIG_AS_AVX2) && defined (X86_FEATURE_AVX2)
+	if (cpu_has_avx2) {
+		zio_checksum_SHA256_impl = &zio_checksum_SHA256_avx2_impl;
+		return;
+	}
+#endif
+#if defined(CONFIG_AS_AVX) && defined (X86_FEATURE_AVX)
+	if (cpu_has_avx) {
+		zio_checksum_SHA256_impl = &zio_checksum_SHA256_avx_impl;
+		return;
+	}
+#endif
+#endif
 }

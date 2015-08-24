@@ -168,6 +168,8 @@ zio_init(void)
 			zio_data_buf_cache[c - 1] = zio_data_buf_cache[c];
 	}
 
+	zio_checksum_SHA256_init();
+
 	zio_inject_init();
 
 	lz4_init();
