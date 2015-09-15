@@ -1787,8 +1787,9 @@ zvol_set_snapdev_check(void *arg, dmu_tx_t *tx)
 }
 
 static int
-zvol_set_snapdev_sync_cb(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
+zvol_set_snapdev_sync_cb(dsl_dataset_t *ds, const char *bmark, void *arg)
 {
+	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	zvol_set_snapdev_arg_t *zsda = arg;
 	char dsname[MAXNAMELEN];
 	zvol_task_t *task;
@@ -1822,7 +1823,7 @@ zvol_set_snapdev_sync(void *arg, dmu_tx_t *tx)
 	zsda->zsda_tx = tx;
 
 	dmu_objset_find_dp(dp, dd->dd_object, zvol_set_snapdev_sync_cb,
-	    zsda, DS_FIND_CHILDREN);
+	    zsda, DS_FIND_CHILDREN, 0, 0);
 
 	dsl_dir_rele(dd, FTAG);
 }
