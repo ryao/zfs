@@ -370,6 +370,82 @@ zfs_graph_add(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *source,
 }
 
 /*
+ * Allocate and return a string containing the name of the parent of dataset.
+ * The string returned should be freed by free().
+ * If there is no parent, returns NULL.
+ */
+
+const char *
+parentof(const char *dataset)
+{
+	char *p;
+	int err;
+
+	if ((p = strpbrk(dataset, "@#")))
+		err = asprintf(&p, "%.*s", (int)(p - dataset), dataset);
+	else if ((p = strrchr(dataset, '/')))
+		err = asprintf(&p, "%.*s", (int)(p - dataset), dataset);
+	else return (NULL);
+
+	if (err == -1)
+		return (NULL);
+
+	return (p);
+}
+
+int iterate_children_cb(zfs_handle_t *zhp, void *data)
+{
+	libzfs_handle_t *hdl = zhp->zfs_hdl;
+	const char *dataset = zhp->zfs_name;
+	const char *parent;
+	dmu_objset_stats_t *stats = &zhp->zfs_dmustats;
+	zfs_graph_t *zgp = data;
+	zfs_vertex_t *zvp;
+
+	zvp = zfs_graph_lookup(hdl, zgp, dataset, 0);
+	if (zvp == NULL)
+		return (-1);
+	if (zvp->zv_visited == VISIT_SEEN)
+		return (0);
+
+	if (stats->dds_is_snapshot) {
+		zgp->zg_clone_count += stats->dds_num_clones;
+	} else {
+		if (stats->dds_origin[0] != '\0') {
+			if (zfs_graph_add(hdl, zgp,
+			    stats->dds_origin, dataset,
+			    stats->dds_creation_txg) != 0)
+				return (-1);
+			/*
+			 * Count origins only if they are contained in the
+			 * graph
+			 */
+			if (isa_child_of(stats->dds_origin,
+			    zgp->zg_root))
+				zgp->zg_clone_count--;
+		}
+	}
+
+	/*
+	 * Add an edge between the parent and the child.
+	 */
+	parent = parentof(dataset);
+	if (parent != NULL) {
+		if (zfs_graph_add(hdl, zgp, parent, dataset,
+		    stats->dds_creation_txg) != 0) {
+			free((void *)parent);
+			return (-1);
+		}
+
+		free((void *)parent);
+	}
+
+	zvp->zv_visited = VISIT_SEEN;
+
+	return (0);
+}
+
+/*
  * Iterate over all children of the given dataset, adding any vertices
  * as necessary.  Returns -1 if there was an error, or 0 otherwise.
  * This is a simple recursive algorithm - the ZFS namespace typically
@@ -379,88 +455,28 @@ zfs_graph_add(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *source,
 static int
 iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 {
-	zfs_cmd_t zc = {"\0"};
-	zfs_vertex_t *zvp;
-
-	/*
-	 * Look up the source vertex, and avoid it if we've seen it before.
-	 */
-	zvp = zfs_graph_lookup(hdl, zgp, dataset, 0);
-	if (zvp == NULL)
+	if (zfs_iter_generic(hdl, dataset,
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME, 0, 0,
+	    B_FALSE, &iterate_children_cb, zgp) != 0)
 		return (-1);
-	if (zvp->zv_visited == VISIT_SEEN)
-		return (0);
 
-	/*
-	 * Iterate over all children
-	 */
-	for ((void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	    ioctl(hdl->libzfs_fd, ZFS_IOC_DATASET_LIST_NEXT, &zc) == 0;
-	    (void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name))) {
-		/*
-		 * Get statistics for this dataset, to determine the type of the
-		 * dataset and clone statistics.  If this fails, the dataset has
-		 * since been removed, and we're pretty much screwed anyway.
-		 */
-		zc.zc_objset_stats.dds_origin[0] = '\0';
-		if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
-			continue;
+	return (0);
+}
 
-		if (zc.zc_objset_stats.dds_origin[0] != '\0') {
-			if (zfs_graph_add(hdl, zgp,
-			    zc.zc_objset_stats.dds_origin, zc.zc_name,
-			    zc.zc_objset_stats.dds_creation_txg) != 0)
-				return (-1);
-			/*
-			 * Count origins only if they are contained in the graph
-			 */
-			if (isa_child_of(zc.zc_objset_stats.dds_origin,
-			    zgp->zg_root))
-				zgp->zg_clone_count--;
-		}
+static int
+get_objset_stats_cb(zfs_handle_t *zhp, void *data)
+{
+	dmu_objset_stats_t *stats = data;
+	*stats = zhp->zfs_dmustats;
+	return (0);
 
-		/*
-		 * Add an edge between the parent and the child.
-		 */
-		if (zfs_graph_add(hdl, zgp, dataset, zc.zc_name,
-		    zc.zc_objset_stats.dds_creation_txg) != 0)
-			return (-1);
-
-		/*
-		 * Recursively visit child
-		 */
-		if (iterate_children(hdl, zgp, zc.zc_name))
-			return (-1);
-	}
-
-	/*
-	 * Now iterate over all snapshots.
-	 */
-	bzero(&zc, sizeof (zc));
-
-	for ((void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	    ioctl(hdl->libzfs_fd, ZFS_IOC_SNAPSHOT_LIST_NEXT, &zc) == 0;
-	    (void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name))) {
-
-		/*
-		 * Get statistics for this dataset, to determine the type of the
-		 * dataset and clone statistics.  If this fails, the dataset has
-		 * since been removed, and we're pretty much screwed anyway.
-		 */
-		if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
-			continue;
-
-		/*
-		 * Add an edge between the parent and the child.
-		 */
-		if (zfs_graph_add(hdl, zgp, dataset, zc.zc_name,
-		    zc.zc_objset_stats.dds_creation_txg) != 0)
-			return (-1);
-
-		zgp->zg_clone_count += zc.zc_objset_stats.dds_num_clones;
-	}
-
-	zvp->zv_visited = VISIT_SEEN;
+}
+int
+get_objset_stats(libzfs_handle_t *hdl, const char *dataset, dmu_objset_stats_t *stats)
+{
+	if (zfs_iter_generic(hdl, dataset, 0, 0, 0, B_FALSE,
+	    &get_objset_stats_cb, stats) != 0)
+		return (-1);
 
 	return (0);
 }
@@ -473,26 +489,24 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 static boolean_t
 external_dependents(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 {
-	zfs_cmd_t zc = {"\0"};
+	dmu_objset_stats_t stats;
 
 	/*
 	 * Check whether this dataset is a clone or has clones since
 	 * iterate_children() only checks the children.
 	 */
-	(void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
+	if (get_objset_stats(hdl, dataset, &stats) != 0)
 		return (B_TRUE);
 
-	if (zc.zc_objset_stats.dds_origin[0] != '\0') {
-		if (zfs_graph_add(hdl, zgp,
-		    zc.zc_objset_stats.dds_origin, zc.zc_name,
-		    zc.zc_objset_stats.dds_creation_txg) != 0)
+	if (stats.dds_origin[0] != '\0') {
+		if (zfs_graph_add(hdl, zgp, stats.dds_origin, dataset,
+		    stats.dds_creation_txg) != 0)
 			return (B_TRUE);
-		if (isa_child_of(zc.zc_objset_stats.dds_origin, dataset))
+		if (isa_child_of(stats.dds_origin, dataset))
 			zgp->zg_clone_count--;
 	}
 
-	if ((zc.zc_objset_stats.dds_num_clones) ||
+	if ((stats.dds_num_clones) ||
 	    iterate_children(hdl, zgp, dataset))
 		return (B_TRUE);
 

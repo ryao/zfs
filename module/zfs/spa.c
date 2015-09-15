@@ -165,7 +165,7 @@ boolean_t	spa_create_process = B_TRUE;	/* no process ==> no sysdc */
  * Add a (source=src, propname=propval) list to an nvlist.
  */
 static void
-spa_prop_add_list(nvlist_t *nvl, zpool_prop_t prop, char *strval,
+spa_prop_add_list(nvlist_t *nvl, zpool_prop_t prop, const char *strval,
     uint64_t intval, zprop_source_t src)
 {
 	const char *propname = zpool_prop_to_name(prop);
@@ -460,6 +460,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 		case ZPOOL_PROP_AUTOREPLACE:
 		case ZPOOL_PROP_LISTSNAPS:
 		case ZPOOL_PROP_AUTOEXPAND:
+			error = nvpair_value_string(elem, &strval);
+			if (error == 0) {
+				error = zpool_prop_string_to_index(prop,
+				    strval, &intval);
+				if (!error && intval > 1)
+					error = SET_ERROR(EINVAL);
+				break;
+			}
 			error = nvpair_value_uint64(elem, &intval);
 			if (!error && intval > 1)
 				error = SET_ERROR(EINVAL);
@@ -1784,7 +1792,8 @@ spa_check_logs(spa_t *spa)
 		/* need to recheck in case slog has been restored */
 	case SPA_LOG_UNKNOWN:
 		rv = (dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
-		    zil_check_log_chain, NULL, DS_FIND_CHILDREN) != 0);
+		    zil_check_log_chain, NULL, DS_FIND_CHILDREN,
+		    0, DS_FIND_MAX_DEPTH) != 0);
 		if (rv)
 			spa_set_log_state(spa, SPA_LOG_MISSING);
 		break;
@@ -2784,7 +2793,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 
 		tx = dmu_tx_create_assigned(dp, spa_first_txg(spa));
 		(void) dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
-		    zil_claim, tx, DS_FIND_CHILDREN);
+		    zil_claim, tx, DS_FIND_CHILDREN, 0, DS_FIND_MAX_DEPTH);
 		dmu_tx_commit(tx);
 
 		spa->spa_claiming = B_FALSE;
@@ -3111,7 +3120,7 @@ spa_open(const char *name, spa_t **spapp, void *tag)
  * preventing it from being exported or destroyed.
  */
 spa_t *
-spa_inject_addref(char *name)
+spa_inject_addref(const char *name)
 {
 	spa_t *spa;
 
@@ -3827,10 +3836,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * Get the root pool information from the root disk, then import the root pool
  * during the system boot up time.
  */
-extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
-
 static nvlist_t *
-spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
+spa_generate_rootconf(const char *devpath, const char *devid, uint64_t *guid)
 {
 	nvlist_t *config;
 	nvlist_t *nvtop, *nvroot;
@@ -3916,7 +3923,7 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
  *	"/pci@1f,0/ide@d/disk@0,0:a"
  */
 int
-spa_import_rootpool(char *devpath, char *devid)
+spa_import_rootpool(const char *devpath, const char *devid)
 {
 	spa_t *spa;
 	vdev_t *rvd, *bvd, *avd = NULL;
@@ -4031,7 +4038,7 @@ out:
  * Import a non-root pool into the system.
  */
 int
-spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
+spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 {
 	spa_t *spa;
 	char *altroot = NULL;
@@ -4042,6 +4049,7 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	int error;
 	nvlist_t *nvroot;
 	nvlist_t **spares, **l2cache;
+	nvpair_t *elem;
 	uint_t nspares, nl2cache;
 
 	/*
@@ -4058,8 +4066,24 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 */
 	(void) nvlist_lookup_string(props,
 	    zpool_prop_to_name(ZPOOL_PROP_ALTROOT), &altroot);
-	(void) nvlist_lookup_uint64(props,
-	    zpool_prop_to_name(ZPOOL_PROP_READONLY), &readonly);
+
+	error = nvlist_lookup_nvpair(props,
+	    zpool_prop_to_name(ZPOOL_PROP_READONLY), &elem);
+	if (error == 0) {
+		switch (nvpair_type(elem)) {
+		case DATA_TYPE_STRING:
+			error = zpool_prop_string_to_index(ZPOOL_PROP_READONLY,
+			    fnvpair_value_string(elem), &readonly);
+			break;
+		case DATA_TYPE_UINT64:
+			readonly = fnvpair_value_uint64(elem);
+			break;
+		/* XXX: Silently ignore to match legacy behavior. */
+		default:
+			break;
+		}
+	}
+
 	if (readonly)
 		mode = FREAD;
 	spa = spa_add(pool, config, altroot);
@@ -4320,7 +4344,7 @@ spa_tryimport(nvlist_t *tryconfig)
  * we don't sync the labels or remove the configuration cache.
  */
 static int
-spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
+spa_export_common(const char *pool, int new_state, nvlist_t **oldconfig,
     boolean_t force, boolean_t hardforce)
 {
 	spa_t *spa;
@@ -4426,7 +4450,7 @@ export_spa:
  * Destroy a storage pool.
  */
 int
-spa_destroy(char *pool)
+spa_destroy(const char *pool)
 {
 	return (spa_export_common(pool, POOL_STATE_DESTROYED, NULL,
 	    B_FALSE, B_FALSE));
@@ -4436,7 +4460,7 @@ spa_destroy(char *pool)
  * Export a storage pool.
  */
 int
-spa_export(char *pool, nvlist_t **oldconfig, boolean_t force,
+spa_export(const char *pool, nvlist_t **oldconfig, boolean_t force,
     boolean_t hardforce)
 {
 	return (spa_export_common(pool, POOL_STATE_EXPORTED, oldconfig,
@@ -4448,7 +4472,7 @@ spa_export(char *pool, nvlist_t **oldconfig, boolean_t force,
  * from the namespace in any way.
  */
 int
-spa_reset(char *pool)
+spa_reset(const char *pool)
 {
 	return (spa_export_common(pool, POOL_STATE_UNINITIALIZED, NULL,
 	    B_FALSE, B_FALSE));
@@ -5016,7 +5040,7 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
  * Split a set of devices from their mirrors, and create a new pool from them.
  */
 int
-spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
+spa_vdev_split_mirror(spa_t *spa, const char *newname, nvlist_t *config,
     nvlist_t *props, boolean_t exp)
 {
 	int error = 0;
@@ -6203,6 +6227,12 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			proptype = zpool_prop_get_type(prop);
 
 			if (nvpair_type(elem) == DATA_TYPE_STRING) {
+				if (proptype == PROP_TYPE_INDEX) {
+					strval = fnvpair_value_string(elem);
+					VERIFY0(zpool_prop_string_to_index(prop,
+					    strval, &intval));
+					goto setint;
+				}
 				ASSERT(proptype == PROP_TYPE_STRING);
 				strval = fnvpair_value_string(elem);
 				VERIFY0(zap_update(mos,
@@ -6218,6 +6248,7 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 					VERIFY0(zpool_prop_index_to_string(
 					    prop, intval, &unused));
 				}
+setint:
 				VERIFY0(zap_update(mos,
 				    spa->spa_pool_props_object, propname,
 				    8, 1, &intval, tx));

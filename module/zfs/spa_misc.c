@@ -1428,7 +1428,7 @@ zfs_panic_recover(const char *fmt, ...)
  * lowercase hexadecimal numbers that don't overflow.
  */
 uint64_t
-strtonum(const char *str, char **nptr)
+strtonum(const char *str, const char **nptr)
 {
 	uint64_t val = 0;
 	char c;
@@ -1449,7 +1449,7 @@ strtonum(const char *str, char **nptr)
 	}
 
 	if (nptr)
-		*nptr = (char *)str;
+		*nptr = str;
 
 	return (val);
 }
@@ -1505,7 +1505,7 @@ spa_sync_pass(spa_t *spa)
 	return (spa->spa_sync_pass);
 }
 
-char *
+const char *
 spa_name(spa_t *spa)
 {
 	return (spa->spa_name);
