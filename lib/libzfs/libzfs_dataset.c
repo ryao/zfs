@@ -285,25 +285,32 @@ zpool_free_handles(libzfs_handle_t *hdl)
 	hdl->libzfs_pool_handles = NULL;
 }
 
+static int
+get_objset_stats_cb(zfs_handle_t *zhp, void *data)
+{
+	zfs_cmd_t *zc = data;
+	int err;
+
+	err = nvlist_pack(zhp->zfs_props, (char **) &zc->zc_nvlist_dst,
+	    &zc->zc_nvlist_dst_size, NV_ENCODE_NATIVE, 0);
+
+	(void) strlcpy(zc->zc_name, zhp->zfs_name, sizeof (zc->zc_name));
+
+	zc->zc_objset_stats = zhp->zfs_dmustats;
+
+	return (err);
+}
+
 /*
  * Utility function to gather stats (objset and zpl) for the given object.
  */
 static int
 get_stats_ioctl(zfs_handle_t *zhp, zfs_cmd_t *zc)
 {
-	libzfs_handle_t *hdl = zhp->zfs_hdl;
+	if (zfs_iter_generic(zhp->zfs_hdl, zhp->zfs_name, 0, 0, 0, B_FALSE,
+	    &get_objset_stats_cb, zc) != 0)
+		return (-1);
 
-	(void) strlcpy(zc->zc_name, zhp->zfs_name, sizeof (zc->zc_name));
-
-	while (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, zc) != 0) {
-		if (errno == ENOMEM) {
-			if (zcmd_expand_dst_nvlist(hdl, zc) != 0) {
-				return (-1);
-			}
-		} else {
-			return (-1);
-		}
-	}
 	return (0);
 }
 
@@ -644,7 +651,10 @@ zfs_open(libzfs_handle_t *hdl, const char *path, int types)
 		return (NULL);
 	}
 
-	if (!(types & zhp->zfs_type)) {
+	/*
+	 * types == 0 is set when we have the kernel check the type for us.
+	 */
+	if (types && !(types & zhp->zfs_type)) {
 		(void) zfs_error(hdl, EZFS_BADTYPE, errbuf);
 		zfs_close(zhp);
 		return (NULL);
@@ -1523,7 +1533,6 @@ zfs_is_namespace_prop(zfs_prop_t prop)
 int
 zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 {
-	zfs_cmd_t zc = {"\0"};
 	int ret = -1;
 	prop_changelist_t *cl = NULL;
 	char errbuf[1024];
@@ -1585,14 +1594,9 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 		goto error;
 
 	/*
-	 * Execute the corresponding ioctl() to set this property.
+	 * Call libzfs_core to set this property.
 	 */
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-
-	if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0)
-		goto error;
-
-	ret = zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc);
+	ret = lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
 
 	if (ret != 0) {
 		zfs_setprop_error(hdl, prop, errno, errbuf);
@@ -1601,16 +1605,13 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 			uint64_t old_volsize = zfs_prop_get_int(zhp,
 			    ZFS_PROP_VOLSIZE);
 			nvlist_free(nvl);
-			zcmd_free_nvlists(&zc);
 			if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0)
 				goto error;
 			if (nvlist_add_uint64(nvl,
 			    zfs_prop_to_name(ZFS_PROP_VOLSIZE),
 			    old_volsize) != 0)
 				goto error;
-			if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0)
-				goto error;
-			(void) zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc);
+			(void) lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
 		}
 	} else {
 		if (do_prefix)
@@ -1636,7 +1637,6 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 
 error:
 	nvlist_free(nvl);
-	zcmd_free_nvlists(&zc);
 	if (cl)
 		changelist_free(cl);
 	return (ret);
@@ -1649,7 +1649,7 @@ error:
 int
 zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 {
-	zfs_cmd_t zc = {"\0"};
+	nvlist_t *opts = NULL;
 	int ret;
 	prop_changelist_t *cl;
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
@@ -1659,8 +1659,8 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot inherit %s for '%s'"), propname, zhp->zfs_name);
 
-	zc.zc_cookie = received;
 	if ((prop = zfs_name_to_prop(propname)) == ZPROP_INVAL) {
+		ret = 0;
 		/*
 		 * For user properties, the amount of work we have to do is very
 		 * small, so just do it here.
@@ -1671,13 +1671,15 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 			return (zfs_error(hdl, EZFS_BADPROP, errbuf));
 		}
 
-		(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-		(void) strlcpy(zc.zc_value, propname, sizeof (zc.zc_value));
+		if (received) {
+			opts = fnvlist_alloc();
+			fnvlist_add_boolean(opts, "received");
+		}
 
-		if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_INHERIT_PROP, &zc) != 0)
-			return (zfs_standard_error(hdl, errno, errbuf));
+		if (ret == 0 && lzc_inherit(zhp->zfs_name, propname, opts) != 0)
+			ret = zfs_standard_error(hdl, errno, errbuf);
 
-		return (0);
+		goto out;
 	}
 
 	/*
@@ -1699,8 +1701,6 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	 * Normalize the name, to get rid of shorthand abbreviations.
 	 */
 	propname = zfs_prop_to_name(prop);
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-	(void) strlcpy(zc.zc_value, propname, sizeof (zc.zc_value));
 
 	if (prop == ZFS_PROP_MOUNTPOINT && getzoneid() == GLOBAL_ZONEID &&
 	    zfs_prop_get_int(zhp, ZFS_PROP_ZONED)) {
@@ -1726,7 +1726,12 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	if ((ret = changelist_prefix(cl)) != 0)
 		goto error;
 
-	if ((ret = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_INHERIT_PROP, &zc)) != 0) {
+	if (received) {
+		opts = fnvlist_alloc();
+		fnvlist_add_boolean(opts, "received");
+	}
+
+	if ((ret = lzc_inherit(zhp->zfs_name, propname, opts)) != 0) {
 		return (zfs_standard_error(hdl, errno, errbuf));
 	} else {
 
@@ -1750,6 +1755,9 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 
 error:
 	changelist_free(cl);
+out:
+	if (opts)
+		fnvlist_free(opts);
 	return (ret);
 }
 
@@ -1762,11 +1770,17 @@ getprop_uint64(zfs_handle_t *zhp, zfs_prop_t prop, char **source)
 {
 	nvlist_t *nv;
 	uint64_t value;
+	char *strval = NULL;
 
 	*source = NULL;
 	if (nvlist_lookup_nvlist(zhp->zfs_props,
 	    zfs_prop_to_name(prop), &nv) == 0) {
-		verify(nvlist_lookup_uint64(nv, ZPROP_VALUE, &value) == 0);
+		if ((zfs_prop_get_type(prop) == PROP_TYPE_INDEX) &&
+		    nvlist_lookup_string(nv, ZPROP_VALUE, &strval) == 0) {
+			zprop_string_to_index(prop, strval, &value,
+			    ZFS_TYPE_DATASET);
+		} else
+			VERIFY0(nvlist_lookup_uint64(nv, ZPROP_VALUE, &value));
 		(void) nvlist_lookup_string(nv, ZPROP_SOURCE, source);
 	} else {
 		verify(!zhp->zfs_props_table ||
@@ -1979,7 +1993,7 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		if (zcmd_alloc_dst_nvlist(zhp->zfs_hdl, &zc, 0) != 0)
 			return (-1);
 		(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-		if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_OBJSET_ZPLPROPS, &zc)) {
+		if (get_stats_ioctl(zhp, &zc)) {
 			zcmd_free_nvlists(&zc);
 			if (prop == ZFS_PROP_VERSION &&
 			    zhp->zfs_type == ZFS_TYPE_VOLUME)
@@ -2917,8 +2931,8 @@ static int
 check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
     boolean_t accept_ancestor, int *prefixlen)
 {
-	zfs_cmd_t zc = {"\0"};
 	char parent[ZFS_MAXNAMELEN];
+	char pool[ZFS_MAXNAMELEN];
 	char *slash;
 	zfs_handle_t *zhp;
 	char errbuf[1024];
@@ -2937,12 +2951,11 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 	/* check to see if the pool exists */
 	if ((slash = strchr(parent, '/')) == NULL)
 		slash = parent + strlen(parent);
-	(void) strncpy(zc.zc_name, parent, slash - parent);
-	zc.zc_name[slash - parent] = '\0';
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0 &&
-	    errno == ENOENT) {
+	strncpy(pool, parent, slash - parent);
+	pool[slash - parent] = '\0';
+	if (lzc_exists(pool) != B_TRUE) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "no such pool '%s'"), zc.zc_name);
+		    "no such pool '%s'"), pool);
 		return (zfs_error(hdl, EZFS_NOENT, errbuf));
 	}
 
@@ -2954,7 +2967,7 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 			 */
 			if (parent_name(parent, parent, sizeof (parent)) != 0) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-				    "no such pool '%s'"), zc.zc_name);
+				    "no such pool '%s'"), pool);
 				return (zfs_error(hdl, EZFS_NOENT, errbuf));
 			}
 		} else if (errno == ENOENT) {
@@ -3267,7 +3280,8 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 int
 zfs_destroy(zfs_handle_t *zhp, boolean_t defer)
 {
-	zfs_cmd_t zc = {"\0"};
+	nvlist_t *opts = NULL;
+	int ret = 0;
 
 	if (zhp->zfs_type == ZFS_TYPE_BOOKMARK) {
 		nvlist_t *nv = fnvlist_alloc();
@@ -3282,17 +3296,16 @@ zfs_destroy(zfs_handle_t *zhp, boolean_t defer)
 		return (0);
 	}
 
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-
-	if (ZFS_IS_VOLUME(zhp)) {
-		zc.zc_objset_type = DMU_OST_ZVOL;
-	} else {
-		zc.zc_objset_type = DMU_OST_ZFS;
+	if (defer) {
+		opts = fnvlist_alloc();
+		fnvlist_add_boolean(opts, "defer");
 	}
 
-	zc.zc_defer_destroy = defer;
-	if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_DESTROY, &zc) != 0 &&
-	    errno != ENOENT) {
+	ret = lzc_destroy_one(zhp->zfs_name, opts);
+	if (defer)
+		fnvlist_free(opts);
+
+	if (ret != 0 && errno != ENOENT) {
 		return (zfs_standard_error_fmt(zhp->zfs_hdl, errno,
 		    dgettext(TEXT_DOMAIN, "cannot destroy '%s'"),
 		    zhp->zfs_name));
@@ -3476,47 +3489,60 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 int
 zfs_promote(zfs_handle_t *zhp)
 {
-	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	zfs_cmd_t zc = {"\0"};
-	char parent[MAXPATHLEN];
+	nvlist_t *outnvl = NULL;
 	int ret;
-	char errbuf[1024];
 
-	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
-	    "cannot promote '%s'"), zhp->zfs_name);
-
-	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "snapshots can not be promoted"));
-		return (zfs_error(hdl, EZFS_BADTYPE, errbuf));
-	}
-
-	(void) strlcpy(parent, zhp->zfs_dmustats.dds_origin, sizeof (parent));
-	if (parent[0] == '\0') {
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "not a cloned filesystem"));
-		return (zfs_error(hdl, EZFS_BADTYPE, errbuf));
-	}
-
-	(void) strlcpy(zc.zc_value, zhp->zfs_dmustats.dds_origin,
-	    sizeof (zc.zc_value));
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-	ret = zfs_ioctl(hdl, ZFS_IOC_PROMOTE, &zc);
+	ret = lzc_promote(zhp->zfs_name, NULL, &outnvl);
 
 	if (ret != 0) {
-		int save_errno = errno;
+		libzfs_handle_t *hdl = zhp->zfs_hdl;
+		char errbuf[1024];
+		char *conflsnap = "<internal error>";
+		char *parent = "<internal error>";
 
-		switch (save_errno) {
+		ASSERT(outnvl);
+
+		(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
+		    "cannot promote '%s'"), zhp->zfs_name);
+		/*
+		 * We could use zhp->zfs_dmustats.dds_origin instead of getting
+		 * the parent from the kernel, but we get it from the kernel to
+		 * exercise the lzc_promote codepath. The same goes for relying
+		 * on the return value ENOTDIR to tell us about a snapshot
+		 * intead of using zhp->zfs_type == ZFS_TYPE_SNAPSHOT.
+		 */
+		(void) nvlist_lookup_string(outnvl, "conflsnap", &conflsnap);
+		(void) nvlist_lookup_string(outnvl, "parent", &parent);
+
+		switch (ret) {
 		case EEXIST:
-			/* There is a conflicting snapshot name. */
+			/*
+			 * XXX: This is not unamibiguous. See the lzc_promote
+			 * man page.
+			 */
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "conflicting snapshot '%s' from parent '%s'"),
-			    zc.zc_string, parent);
-			return (zfs_error(hdl, EZFS_EXISTS, errbuf));
+			    conflsnap, parent);
+			ret = zfs_error(hdl, EZFS_EXISTS, errbuf);
+			break;
+
+		case ENOTDIR:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "snapshots can not be promoted"));
+			ret = zfs_error(hdl, EZFS_BADTYPE, errbuf);
+			break;
+
+		case ENOTSOCK:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "not a cloned filesystem"));
+			ret = zfs_error(hdl, EZFS_BADTYPE, errbuf);
+			break;
 
 		default:
-			return (zfs_standard_error(hdl, save_errno, errbuf));
+			ret = zfs_standard_error(hdl, ret, errbuf);
+			break;
 		}
+		nvlist_free(outnvl);
 	}
 	return (ret);
 }
@@ -3795,7 +3821,6 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
     boolean_t force_unmount)
 {
 	int ret;
-	zfs_cmd_t zc = {"\0"};
 	char *delim;
 	prop_changelist_t *cl = NULL;
 	zfs_handle_t *zhrp = NULL;
@@ -3803,6 +3828,8 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 	char parent[ZFS_MAXNAMELEN];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	char errbuf[1024];
+	char *errname;
+	nvlist_t *opts = NULL;
 
 	/* if we have the same exact name, just return success */
 	if (strcmp(zhp->zfs_name, target) == 0)
@@ -3921,23 +3948,19 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 			goto error;
 	}
 
-	if (ZFS_IS_VOLUME(zhp))
-		zc.zc_objset_type = DMU_OST_ZVOL;
-	else
-		zc.zc_objset_type = DMU_OST_ZFS;
+	if (recursive) {
+		opts = fnvlist_alloc();
+		fnvlist_add_boolean(opts, "recursive");
+	}
 
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-	(void) strlcpy(zc.zc_value, target, sizeof (zc.zc_value));
-
-	zc.zc_cookie = recursive;
-
-	if ((ret = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_RENAME, &zc)) != 0) {
+	if ((ret = lzc_rename(zhp->zfs_name, target, opts, &errname)) != 0) {
 		/*
 		 * if it was recursive, the one that actually failed will
-		 * be in zc.zc_name
+		 * be in errname
 		 */
 		(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
-		    "cannot rename '%s'"), zc.zc_name);
+		    "cannot rename '%s'"), errname);
+		strfree(errname);
 
 		if (recursive && errno == EEXIST) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
@@ -3961,6 +3984,8 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 		}
 	}
 
+	if (recursive)
+		fnvlist_free(opts);
 error:
 	if (parentname) {
 		free(parentname);
