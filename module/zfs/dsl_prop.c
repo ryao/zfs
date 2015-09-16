@@ -773,7 +773,8 @@ dsl_props_set_special_check(dsl_dataset_t *ds, zprop_source_t source,
 	case DATA_TYPE_STRING:
 		if (nvpair_value_string(pair, &strval) != 0)
 			return (SET_ERROR(EINVAL));
-		if (zfs_prop_get_type(prop) == PROP_TYPE_INDEX &&
+		if (!zfs_prop_user(propname) &&
+		     zfs_prop_get_type(prop) == PROP_TYPE_INDEX &&
 		     zfs_prop_string_to_index(prop, strval, &intval) != 0)
 				return (SET_ERROR(EINVAL));
 		break;

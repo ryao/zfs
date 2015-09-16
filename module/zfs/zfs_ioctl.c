@@ -2738,6 +2738,7 @@ retry:
 			}
 			if (tnvl) {
 				if (nvpair_type(propval) == DATA_TYPE_STRING &&
+				    !zfs_prop_user(propname) &&
 				    zfs_prop_get_type(prop) == PROP_TYPE_INDEX)
 					err = nvlist_add_uint64(tnvl, propname,
 					    intval);
