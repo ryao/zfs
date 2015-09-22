@@ -764,7 +764,7 @@ dmu_send(const char *tosnap, const char *fromsnap,
 	int err;
 	boolean_t owned = B_FALSE;
 
-	if ((fromsnap != NULL) && strpbrk(fromsnap, "@#") == NULL)
+	if (fromsnap != NULL && strpbrk(fromsnap, "@#") == NULL)
 		return (SET_ERROR(EINVAL));
 
 	err = dsl_pool_hold(tosnap, FTAG, &dp);
@@ -787,31 +787,6 @@ dmu_send(const char *tosnap, const char *fromsnap,
 	}
 
 	if (fromsnap != NULL) {
-		zfs_bookmark_phys_t zb;
-		dsl_dataset_t *fromds;
-		uint64_t fromobj;
-
-		if (!dsl_dir_is_clone(ds->ds_dir)) {
-			dsl_dataset_rele(ds, FTAG);
-			dsl_pool_rele(dp, FTAG);
-			return (SET_ERROR(EINVAL));
-		}
-		fromobj = dsl_dir_phys(ds->ds_dir)->dd_origin_obj;
-		err = dsl_dataset_hold_obj(dp, fromobj, FTAG, &fromds);
-		if (err != 0) {
-			dsl_dataset_rele(ds, FTAG);
-			dsl_pool_rele(dp, FTAG);
-			return (err);
-		}
-		zb.zbm_creation_time =
-		    dsl_dataset_phys(fromds)->ds_creation_time;
-		zb.zbm_creation_txg =
-		    dsl_dataset_phys(fromds)->ds_creation_txg;
-		zb.zbm_guid = dsl_dataset_phys(fromds)->ds_guid;
-		dsl_dataset_rele(fromds, FTAG);
-		err = dmu_send_impl(FTAG, dp, ds, &zb, B_TRUE, embedok,
-		    large_block_ok, outfd, vp, off);
-	} else if (fromsnap != NULL) {
 		zfs_bookmark_phys_t zb;
 		boolean_t is_clone = B_FALSE;
 		int fsnamelen = strchr(tosnap, '@') - tosnap;
