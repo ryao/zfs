@@ -31,20 +31,14 @@ This manual page is part of the OpenZFS Programmer's Manual.
 
 \fBint\fR \fBlzc_send\fR(\fBconst char *\fR\fIsnapname\fR, \fBconst char
 *\fR\fIfrom\fR, \fBint\fR \fIfd\fR, \fBenum lzc_send_flags\fR \fIflags);
-.sp
-\fBint\fR \fBlzc_send_ext\fR(\fBconst char *\fR\fIsnapname\fR, \fBconst char
-*\fR\fIfrom\fR, \fBint\fR \fIfd\fR, \fBnvlist_t *\fR\fIparams\fR);
 
 .SH NAME
-lzc_send, lzc_send_ext \- Generate a send stream from a snapshot
+lzc_send \- Generate a send stream from a snapshot
 
 .SH DESCRIPTION
 .LP
-The \fBlzc_send\fR() and \fBlzc_send_ext\fR() functions write a ZFS stream to
+The \fBlzc_send\fR() function writes a ZFS stream to
 file descriptor \fIfd\fR from snapshot \fIsnapname\fR of dataset \fIfrom\fR.
-The only difference between the two functions is that one uses a bitmask called
-\fIflags\fR for passing flags while the other uses a nvlist called \fIparams\fR
-for passing flags.
 
 .SH RETURN VALUES
 .sp
@@ -59,7 +53,7 @@ information when \fIerrlist\fR is non-NULL. The caller must call
 .SH ERRORS
 .sp
 .LP
-The \fBlzc_send()\fR and \fBlzc_send_ext()\fR functions shall fail if:
+The \fBlzc_send()\fR function shall fail if:
 .sp
 .ne 2
 .na

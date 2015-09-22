@@ -5443,7 +5443,6 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 	file_t *fp;
 	boolean_t largeblockok;
 	boolean_t embedok;
-	boolean_t fromorigin;
 
 	error = nvlist_lookup_int32(innvl, "fd", &fd);
 	if (error != 0)
@@ -5453,10 +5452,6 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	largeblockok = nvlist_exists(innvl, "largeblockok");
 	embedok = nvlist_exists(innvl, "embedok");
-	fromorigin = nvlist_exists(innvl, "fromorigin");
-
-	if (fromname != NULL && fromorigin)
-		return (SET_ERROR(EINVAL));
 
 	if ((fp = getf(fd)) == NULL)
 		return (SET_ERROR(EBADF));

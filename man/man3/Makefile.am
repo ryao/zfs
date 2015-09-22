@@ -20,7 +20,6 @@ dist_man_MANS = \
 	lzc_release.3 \
 	lzc_rollback.3 \
 	lzc_send.3 \
-	lzc_send_ext.3 \
 	lzc_send_progress.3 \
 	lzc_send_space.3 \
 	lzc_set_props.3 \
