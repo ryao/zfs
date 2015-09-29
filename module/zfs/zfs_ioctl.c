@@ -1439,7 +1439,8 @@ put_nvlist(zfs_cmd_t *zc, nvlist_t *nvl)
 	}
 
 	zc->zc_nvlist_dst_size = size;
-	zc->zc_nvlist_dst_filled = B_TRUE;
+	if (error == 0)
+		zc->zc_nvlist_dst_filled = B_TRUE;
 	return (error);
 }
 
@@ -6510,7 +6511,7 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 			}
 			fnvlist_free(lognv);
 
-			if (!nvlist_empty(outnvl) ||
+			if (!nvlist_empty(outnvl) &&
 			    zc->zc_nvlist_dst_size != 0) {
 				int smusherror = 0;
 				if (vec->zvec_smush_outnvlist) {
