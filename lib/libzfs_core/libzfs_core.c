@@ -522,7 +522,6 @@ lzc_send(const char *snapname, const char *from, int fd,
 }
 
 /*
- * If fromsnap is NULL, a full (non-incremental) stream will be estimated.
  * "from" can be NULL, a snapshot, or a bookmark.
  *
  * If from is NULL, a full (non-incremental) stream will be estimated.  This
@@ -546,7 +545,7 @@ lzc_send_space(const char *snapname, const char *from, uint64_t *spacep)
 
 	args = fnvlist_alloc();
 	if (from != NULL)
-		fnvlist_add_string(args, "fromsnap", from);
+		fnvlist_add_string(args, "from", from);
 	err = lzc_ioctl("zfs_send_space", snapname, args, NULL, &result, 0);
 	nvlist_free(args);
 	if (err == 0)
