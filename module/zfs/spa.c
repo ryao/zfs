@@ -4051,6 +4051,7 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	int error;
 	nvlist_t *nvroot;
 	nvlist_t **spares, **l2cache;
+	nvpair_t *elem;
 	uint_t nspares, nl2cache;
 
 	/*
@@ -4067,8 +4068,24 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 */
 	(void) nvlist_lookup_string(props,
 	    zpool_prop_to_name(ZPOOL_PROP_ALTROOT), &altroot);
-	(void) nvlist_lookup_uint64(props,
-	    zpool_prop_to_name(ZPOOL_PROP_READONLY), &readonly);
+
+	error = nvlist_lookup_nvpair(props,
+	    zpool_prop_to_name(ZPOOL_PROP_READONLY), &elem);
+	if (error == 0) {
+		switch (nvpair_type(elem)) {
+		case DATA_TYPE_STRING:
+			error = zpool_prop_string_to_index(ZPOOL_PROP_READONLY,
+			    fnvpair_value_string(elem), &readonly);
+			break;
+		case DATA_TYPE_UINT64:
+			readonly = fnvpair_value_uint64(elem);
+			break;
+		/* XXX: Silently ignore to match legacy behavior. */
+		default:
+			break;
+		}
+	}
+
 	if (readonly)
 		mode = FREAD;
 	spa = spa_add(pool, config, altroot);
