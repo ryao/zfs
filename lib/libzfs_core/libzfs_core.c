@@ -522,7 +522,6 @@ lzc_send(const char *snapname, const char *from, int fd,
 }
 
 /*
- * If fromsnap is NULL, a full (non-incremental) stream will be estimated.
  * "from" can be NULL, a snapshot, or a bookmark.
  *
  * If from is NULL, a full (non-incremental) stream will be estimated.  This
