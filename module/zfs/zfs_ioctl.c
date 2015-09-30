@@ -5382,7 +5382,7 @@ zfs_ioc_space_snaps(const char *lastsnap, nvlist_t *innvl, nvlist_t *outnvl)
 	if (*sp == '#')
 		return (SET_ERROR(EINVAL));
 
-	if (len != sp - firstsnap)
+	if (len != sp - lastsnap)
 		return (SET_ERROR(EXDEV));
 	if (strncmp(lastsnap, firstsnap, len) != 0)
 		return (SET_ERROR(EXDEV));
