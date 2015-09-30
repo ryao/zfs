@@ -6478,7 +6478,7 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 			error = zfs_namecheck(name, vec->zvec_namecheck,
 			    vec->zvec_pool_check);
 
-			if (error == 0 && (zc->zc_iflags & FKIOCTL))
+			if (error == 0 && !(zc->zc_iflags & FKIOCTL))
 				error = vec->zvec_secpolicy(zc,
 				    innvl, opts, CRED());
 
