@@ -153,6 +153,7 @@ typedef union zap_leaf_chunk {
 } zap_leaf_chunk_t;
 
 typedef struct zap_leaf {
+	dmu_buf_user_t l_dbu;
 	krwlock_t l_rwlock;
 	uint64_t l_blkid;		/* 1<<ZAP_BLOCK_SHIFT byte block off */
 	int l_bs;			/* block size shift */

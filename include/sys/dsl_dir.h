@@ -85,6 +85,8 @@ typedef struct dsl_dir_phys {
 } dsl_dir_phys_t;
 
 struct dsl_dir {
+	dmu_buf_user_t dd_dbu;
+
 	/* These are immutable; no lock needed: */
 	uint64_t dd_object;
 	dsl_pool_t *dd_pool;
@@ -123,6 +125,7 @@ struct dsl_dataset;
 typedef struct dsl_dataset dsl_dataset_t;
 
 void dsl_dir_rele(dsl_dir_t *dd, void *tag);
+void dsl_dir_async_rele(dsl_dir_t *dd, void *tag);
 int dsl_dir_hold(dsl_pool_t *dp, const char *name, void *tag,
     dsl_dir_t **, const char **tail);
 int dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,

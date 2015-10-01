@@ -227,9 +227,8 @@ typedef struct dmu_buf_impl {
 
 	/* Data which is unique to data (leaf) blocks: */
 
-	/* stuff we store for the user (see dmu_buf_set_user) */
-	void *db_user_ptr;
-	dmu_buf_evict_func_t *db_evict_func;
+	/* User callback information. */
+	dmu_buf_user_t *db_user;
 
 	uint8_t db_immediate_evict;
 	uint8_t db_freed_in_flight;
