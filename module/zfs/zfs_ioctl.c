@@ -5886,6 +5886,9 @@ dump_ds(dsl_dataset_t *ds, boolean_t recurse, void *data)
 	    dls->dls_fsname && (strchr(dls->dls_fsname, '@') != NULL) &&
 	    strcmp(dls->dls_fsname, fsname) != 0)
 		goto skip;
+	if (!issnap && dls->dls_fsname &&
+	    (strchr(dls->dls_fsname, '@') != NULL))
+		goto skip;
 
 	err = dump_fs(dls->dls_vp, fsname, nvl, &objset_stats);
 
