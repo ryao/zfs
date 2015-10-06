@@ -1785,6 +1785,9 @@ zfs_do_get(int argc, char **argv)
 
 	cb.cb_first = B_TRUE;
 
+	if (argc > 0)
+		flags |= ZFS_ITER_DEPTH_LIMIT;
+
 	/* run for each object */
 	ret = zfs_for_each(argc, argv, flags, types, NULL,
 	    &cb.cb_proplist, limit, get_callback, &cb);
