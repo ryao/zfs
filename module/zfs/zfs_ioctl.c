@@ -2090,8 +2090,8 @@ zfs_ioc_vdev_setfru(zfs_cmd_t *zc)
  * The caller frees the nvlist on success.
  */
 static int
-zfs_ioc_objset_stats_impl_nohold(nvlist_t **nv, dmu_objset_stats_t *stat, objset_t
-	*os, boolean_t str_indices)
+zfs_ioc_objset_stats_impl_nohold(nvlist_t **nv, dmu_objset_stats_t *stat,
+    objset_t *os, boolean_t str_indices)
 {
 	int error = 0;
 	int (*prop_func)(objset_t *, nvlist_t **) = (str_indices) ?
