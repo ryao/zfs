@@ -2090,7 +2090,7 @@ zfs_ioc_vdev_setfru(zfs_cmd_t *zc)
  * The caller frees the nvlist on success.
  */
 static int
-zfs_ioc_objset_stats_impl(nvlist_t **nv, dmu_objset_stats_t *stat, objset_t
+zfs_ioc_objset_stats_impl_nohold(nvlist_t **nv, dmu_objset_stats_t *stat, objset_t
 	*os, boolean_t str_indices)
 {
 	int error = 0;
@@ -2122,6 +2122,25 @@ zfs_ioc_objset_stats_impl(nvlist_t **nv, dmu_objset_stats_t *stat, objset_t
 	return (error);
 }
 
+static int
+zfs_ioc_objset_stats_impl(nvlist_t **nvp, dmu_objset_stats_t *stat,
+    char *fsname, boolean_t str_indices)
+{
+	objset_t *os;
+	int error;
+
+	error = dmu_objset_hold(fsname, FTAG, &os);
+	if (error == 0) {
+		error = zfs_ioc_objset_stats_impl_nohold(nvp, stat,
+		    os, str_indices);
+
+		dmu_objset_rele(os, FTAG);
+	}
+
+
+	return (error);
+}
+
 /*
  * inputs:
  * zc_name		name of filesystem
@@ -2135,21 +2154,17 @@ zfs_ioc_objset_stats_impl(nvlist_t **nv, dmu_objset_stats_t *stat, objset_t
 static int
 zfs_ioc_objset_stats(zfs_cmd_t *zc)
 {
-	objset_t *os;
-	nvlist_t *nv;
+	nvlist_t *nv = NULL;
+	nvlist_t **nvp = (zc->zc_nvlist_dst) ? &nv : NULL;
 	int error;
 
-	error = dmu_objset_hold(zc->zc_name, FTAG, &os);
-	if (error == 0) {
-		nvlist_t **outnvl = (zc->zc_nvlist_dst) ? &nv : NULL;
-		error = zfs_ioc_objset_stats_impl(outnvl, &zc->zc_objset_stats,
-		    os, B_FALSE);
+	error = zfs_ioc_objset_stats_impl(nvp, &zc->zc_objset_stats,
+		    zc->zc_name, B_FALSE);
 
-		dmu_objset_rele(os, FTAG);
-	}
-
-	if (zc->zc_nvlist_dst && error == 0) {
-		error = put_nvlist(zc, nv);
+	if (nv) {
+		if (error == 0) {
+			error = put_nvlist(zc, *nvp);
+		}
 		nvlist_free(nv);
 	}
 
@@ -2318,6 +2333,7 @@ top:
 		if (error == ENOENT)
 			error = SET_ERROR(ESRCH);
 	} while (error == 0 && dataset_name_hidden(zl->zl_name));
+	dmu_objset_rele(os, FTAG);
 
 	/*
 	 * if it's an internal dataset (ie. with a '$' in its name),
@@ -2326,15 +2342,13 @@ top:
 	if (error == 0 && strchr(zl->zl_name, '$') == NULL) {
 		/* fill in the stats */
 		error = zfs_ioc_objset_stats_impl(&zl->zl_nvlist,
-		    zl->zl_objset_stats, os, B_FALSE);
+		    zl->zl_objset_stats, zl->zl_name, B_FALSE);
 		if (error == ENOENT) {
-			dmu_objset_rele(os, FTAG);
 			/* we lost a race with destroy, get the next one. */
 			zl->zl_name[orig_len] = '\0';
 			goto top;
 		}
 	}
-	dmu_objset_rele(os, FTAG);
 	return (error);
 }
 
@@ -2386,7 +2400,7 @@ zfs_ioc_snapshot_list_next_impl(zfs_list_t *zl, boolean_t simple)
 
 			error = dmu_objset_from_ds(ds, &ossnap);
 			if (error == 0) {
-				error = zfs_ioc_objset_stats_impl(&nv,
+				error = zfs_ioc_objset_stats_impl_nohold(&nv,
 				    zl->zl_objset_stats, ossnap, B_FALSE);
 			}
 			dsl_dataset_rele(ds, FTAG);
@@ -5846,7 +5860,7 @@ dump_ds(dsl_dataset_t *ds, boolean_t recurse, void *data)
 
 	dp = ds->ds_dir->dd_pool;
 	dmu_objset_from_ds(ds, &osp);
-	err = zfs_ioc_objset_stats_impl(&nvl,
+	err = zfs_ioc_objset_stats_impl_nohold(&nvl,
 	    &objset_stats, osp, B_TRUE);
 	if (err)
 		return (err);
