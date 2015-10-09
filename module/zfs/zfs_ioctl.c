@@ -5972,7 +5972,7 @@ dump_list_strategy_one(dsl_pool_t *dp, uint64_t dd_object,
 
 		(void) zap_lookup(dp->dp_meta_objset,
 		    dp->dp_spa->spa_pool_props_object,
-		    zpool_prop_to_name (ZPOOL_PROP_LISTSNAPS),
+		    zpool_prop_to_name(ZPOOL_PROP_LISTSNAPS),
 		    sizeof (uint64_t), 1, &listsnap);
 
 		if (listsnap)
