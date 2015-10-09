@@ -774,9 +774,9 @@ dsl_props_set_special_check(dsl_dataset_t *ds, zprop_source_t source,
 		if (nvpair_value_string(pair, &strval) != 0)
 			return (SET_ERROR(EINVAL));
 		if (!zfs_prop_user(propname) &&
-		     zfs_prop_get_type(prop) == PROP_TYPE_INDEX &&
-		     zfs_prop_string_to_index(prop, strval, &intval) != 0)
-				return (SET_ERROR(EINVAL));
+		    zfs_prop_get_type(prop) == PROP_TYPE_INDEX &&
+		    zfs_prop_string_to_index(prop, strval, &intval) != 0)
+			return (SET_ERROR(EINVAL));
 		break;
 	case DATA_TYPE_UINT64:
 		VERIFY(0 == nvpair_value_uint64(pair, &intval));
@@ -789,14 +789,16 @@ dsl_props_set_special_check(dsl_dataset_t *ds, zprop_source_t source,
 		err = dsl_dir_set_quota_check_impl(ds, source, intval, tx);
 		break;
 	case ZFS_PROP_REFQUOTA:
-		err = dsl_dataset_set_refquota_check_impl(ds, source, intval, tx);
+		err = dsl_dataset_set_refquota_check_impl(ds, source, intval,
+		    tx);
 		break;
 	case ZFS_PROP_RESERVATION:
-		err = dsl_dir_set_reservation_check_impl(ds, source, intval, tx);
+		err = dsl_dir_set_reservation_check_impl(ds, source, intval,
+		    tx);
 		break;
 	case ZFS_PROP_REFRESERVATION:
-		err = dsl_dataset_set_refreservation_check_impl(ds, source, intval,
-		    tx);
+		err = dsl_dataset_set_refreservation_check_impl(ds, source,
+		    intval, tx);
 		break;
 	case ZFS_PROP_VOLSIZE:
 	case ZFS_PROP_SNAPDEV:
@@ -823,9 +825,9 @@ dsl_props_set_special_sync(dsl_dataset_t *ds, zprop_source_t source,
 		if (nvpair_value_string(pair, &strval) != 0)
 			return (SET_ERROR(EINVAL));
 		if (!zfs_prop_user(propname) &&
-		     zfs_prop_get_type(prop) == PROP_TYPE_INDEX &&
-		     zfs_prop_string_to_index(prop, strval, &intval) != 0)
-				return (SET_ERROR(EINVAL));
+		    zfs_prop_get_type(prop) == PROP_TYPE_INDEX &&
+		    zfs_prop_string_to_index(prop, strval, &intval) != 0)
+			return (SET_ERROR(EINVAL));
 		break;
 	case DATA_TYPE_UINT64:
 		VERIFY0(nvpair_value_uint64(pair, &intval));
@@ -845,7 +847,8 @@ dsl_props_set_special_sync(dsl_dataset_t *ds, zprop_source_t source,
 		dsl_dir_set_reservation_sync_impl(ds, source, intval, tx);
 		break;
 	case ZFS_PROP_REFRESERVATION:
-		dsl_dataset_set_refreservation_sync_impl(ds, source, intval, tx);
+		dsl_dataset_set_refreservation_sync_impl(ds, source, intval,
+		    tx);
 		break;
 	case ZFS_PROP_VOLSIZE:
 	case ZFS_PROP_SNAPDEV:
