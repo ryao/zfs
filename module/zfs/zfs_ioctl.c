@@ -2721,7 +2721,10 @@ retry:
 		if (err == 0)
 			err = zfs_check_settable(dsname, pair, CRED());
 
-		/* Atomically setting old-style special properties is not supported */
+		/*
+		 * Atomically setting old-style special properties is not
+		 * supported.
+		 */
 		switch (prop) {
 		case ZFS_PROP_VOLSIZE:
 		case ZFS_PROP_SNAPDEV:
