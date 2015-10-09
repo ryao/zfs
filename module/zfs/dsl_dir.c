@@ -1551,8 +1551,8 @@ dsl_dir_set_reservation_check_impl(dsl_dataset_t *ds, zprop_source_t source,
 }
 
 void
-dsl_dir_set_reservation_sync_impl_impl(dsl_dir_t *dd, uint64_t reservation, dmu_tx_t
-*tx)
+dsl_dir_set_reservation_sync_impl_impl(dsl_dir_t *dd, uint64_t reservation,
+    dmu_tx_t *tx)
 {
 	uint64_t used;
 	int64_t delta;
@@ -1561,7 +1561,8 @@ dsl_dir_set_reservation_sync_impl_impl(dsl_dir_t *dd, uint64_t reservation, dmu_
 
 	mutex_enter(&dd->dd_lock);
 	used = dsl_dir_phys(dd)->dd_used_bytes;
-	delta = MAX(used, reservation) - MAX(used, dsl_dir_phys(dd)->dd_reserved);
+	delta = MAX(used, reservation) - MAX(used,
+	    dsl_dir_phys(dd)->dd_reserved);
 	dsl_dir_phys(dd)->dd_reserved = reservation;
 
 	if (dd->dd_parent != NULL) {

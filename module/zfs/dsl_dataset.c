@@ -1788,7 +1788,8 @@ typedef struct dsl_dataset_rename_snapshot_arg {
 
 /* ARGSUSED */
 static int
-dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, boolean_t unused, void *arg)
+dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, boolean_t unused,
+    void *arg)
 {
 	dsl_dataset_rename_snapshot_arg_t *ddrsa = arg;
 	int error;
@@ -1836,14 +1837,16 @@ dsl_dataset_rename_snapshot_check(void *arg, dmu_tx_t *tx)
 		    dsl_dataset_rename_snapshot_check_impl, ddrsa,
 		    DS_FIND_CHILDREN, DS_FIND_MAX_DEPTH);
 	} else {
-		error = dsl_dataset_rename_snapshot_check_impl(hds, B_FALSE, ddrsa);
+		error = dsl_dataset_rename_snapshot_check_impl(hds, B_FALSE,
+		    ddrsa);
 	}
 	dsl_dataset_rele(hds, FTAG);
 	return (error);
 }
 
 static int
-dsl_dataset_rename_snapshot_sync_impl(dsl_dataset_t *hds, boolean_t unused, void *arg)
+dsl_dataset_rename_snapshot_sync_impl(dsl_dataset_t *hds, boolean_t unused,
+    void *arg)
 {
 	dsl_dataset_rename_snapshot_arg_t *ddrsa = arg;
 	dsl_pool_t *dp = hds->ds_dir->dd_pool;
@@ -1892,7 +1895,8 @@ dsl_dataset_rename_snapshot_sync(void *arg, dmu_tx_t *tx)
 		    dsl_dataset_rename_snapshot_sync_impl, ddrsa,
 		    DS_FIND_CHILDREN, DS_FIND_MAX_DEPTH));
 	} else {
-		VERIFY0(dsl_dataset_rename_snapshot_sync_impl(hds, B_FALSE, ddrsa));
+		VERIFY0(dsl_dataset_rename_snapshot_sync_impl(hds, B_FALSE,
+		    ddrsa));
 	}
 	dsl_dataset_rele(hds, FTAG);
 }
@@ -2971,8 +2975,8 @@ dsl_dataset_set_refquota_sync_impl(dsl_dataset_t *ds, zprop_source_t source,
 }
 
 int
-dsl_dataset_set_refreservation_check_impl(dsl_dataset_t *ds, zprop_source_t source,
-    uint64_t refreservation, dmu_tx_t *tx)
+dsl_dataset_set_refreservation_check_impl(dsl_dataset_t *ds,
+    zprop_source_t source, uint64_t refreservation, dmu_tx_t *tx)
 {
 	dsl_pool_t *dp = dmu_tx_pool(tx);
 	int error;
