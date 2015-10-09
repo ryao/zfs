@@ -4291,7 +4291,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	    strchr(zc->zc_value, '%'))
 		return (SET_ERROR(EINVAL));
 
-	(void) strlcpy(tofs, zc->zc_value, sizeof(tofs));
+	(void) strlcpy(tofs, zc->zc_value, sizeof (tofs));
 	tosnap = strchr(tofs, '@');
 	*tosnap++ = '\0';
 
