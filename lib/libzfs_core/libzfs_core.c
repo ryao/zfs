@@ -665,7 +665,7 @@ lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
 		atp = strchr(zc.zc_begin_record.drr_toname, '@');
 		if (atp == NULL)
 			return (EINVAL);
-		if (strlen(zc.zc_value) + strlen(atp) >= sizeof(zc.zc_value))
+		if (strlen(zc.zc_value) + strlen(atp) >= sizeof (zc.zc_value))
 			return (ENAMETOOLONG);
 		strcat(zc.zc_value, atp);
 	}
