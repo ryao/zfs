@@ -2297,14 +2297,12 @@ typedef struct zfs_list {
  * inputs:
  * zl_name		name of filesystem
  * zl_cookie		zap cursor
- * zc_nvlist_dst_size	size of buffer for property nvlist
  *
  * outputs:
- * zc_name		name of next filesystem
- * zc_cookie		zap cursor
- * zc_objset_stats	stats
- * zc_nvlist_dst	property nvlist
- * zc_nvlist_dst_size	size of property nvlist
+ * zl_name		name of next filesystem
+ * zl_cookie		zap cursor
+ * zl_objset_stats	stats
+ * zl_nvlist		property nvlist
  */
 int
 zfs_ioc_dataset_list_next_impl(zfs_list_t *zl)
@@ -2354,15 +2352,14 @@ top:
 
 /*
  * inputs:
- * zc_name		name of filesystem
- * zc_cookie		zap cursor
- * zc_nvlist_dst_size	size of buffer for property nvlist
+ * zl_name		name of filesystem
+ * zl_cookie		zap cursor
+ * simple		whether ot grab objset_stats
  *
  * outputs:
- * zc_name		name of next snapshot
- * zc_objset_stats	stats
- * zc_nvlist_dst	property nvlist
- * zc_nvlist_dst_size	size of property nvlist
+ * zl_name		name of next snapshot
+ * zl_objset_stats	stats
+ * zl_nvlist		property nvlist
  */
 static int
 zfs_ioc_snapshot_list_next_impl(zfs_list_t *zl, boolean_t simple)
