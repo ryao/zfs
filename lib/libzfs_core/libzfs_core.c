@@ -840,7 +840,7 @@ lzc_inherit(const char *fsname, const char *propname, nvlist_t *opts)
  * Destroying snapshots and bookmarks is not currently supported. Call
  * lzc_destroy_snaps and lzc_destroy_bookmarks for those respectively.
  *
- * The only currently valud property is the boolean "defer". It makes
+ * The only currently valid property is the boolean "defer". It makes
  * destruction asynchronous such that the only error code back is if we try to
  * destroy something that does not exist. The caller must unmount the dataset
  * before calling this. Otherwise, it will fail.
