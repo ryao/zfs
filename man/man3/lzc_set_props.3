@@ -95,13 +95,17 @@ A boolean property that specifies that the properties being set were received fr
 tells the kernel to handle failures by setting all properties that do not fail.
 This is necessary when setting old-style special properties.
 .sp
-There are 7 old-style special properties that cannot be set atomically with the others. They are:
+There are 9 old-style special properties that cannot be set atomically with the others. They are:
+.sp
+filesystem_limit
 .sp
 groupquota@
 .sp
 groupused@
 .sp
 snapdev
+.sp
+snapshot_limits
 .sp
 userquota@
 .sp
