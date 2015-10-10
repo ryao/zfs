@@ -272,10 +272,10 @@ int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
 int dsl_dataset_check_quota(dsl_dataset_t *ds, boolean_t check_quota,
     uint64_t asize, uint64_t inflight, uint64_t *used,
     uint64_t *ref_rsrv);
-int dsl_dataset_set_refquota_check_impl(dsl_dataset_t *ds, zprop_source_t source,
-    uint64_t refquota, dmu_tx_t *tx);
-void dsl_dataset_set_refquota_sync_impl(dsl_dataset_t *ds, zprop_source_t source,
-    uint64_t refquota, dmu_tx_t *tx);
+int dsl_dataset_set_refquota_check_impl(dsl_dataset_t *ds,
+    zprop_source_t source, uint64_t refquota, dmu_tx_t *tx);
+void dsl_dataset_set_refquota_sync_impl(dsl_dataset_t *ds,
+    zprop_source_t source, uint64_t refquota, dmu_tx_t *tx);
 int dsl_dataset_set_refreservation_check_impl(dsl_dataset_t *ds,
     zprop_source_t source, uint64_t refreservation, dmu_tx_t *tx);
 void dsl_dataset_set_refreservation_sync_impl(dsl_dataset_t *ds,
