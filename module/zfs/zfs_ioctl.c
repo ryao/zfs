@@ -2726,6 +2726,8 @@ retry:
 		 * supported.
 		 */
 		switch (prop) {
+		case ZFS_PROP_FILESYSTEM_LIMIT:
+		case ZFS_PROP_SNAPSHOT_LIMIT:
 		case ZFS_PROP_VOLSIZE:
 		case ZFS_PROP_SNAPDEV:
 		case ZFS_PROP_VERSION:
