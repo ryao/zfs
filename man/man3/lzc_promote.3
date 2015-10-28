@@ -30,7 +30,7 @@ This manual page is part of the OpenZFS Programmer's Manual.
 .SH SYNOPSIS
 #include <libzfs_core.h>
 
-\fBint\fR \fBlzc_promote\fR(\fBconst char *\fR\fIfsname\fR, \fBnvlist_t *\fR\fIopts\fR);
+\fBint\fR \fBlzc_promote\fR(\fBconst char *\fR\fIfsname\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIoutnvl\fR);
 
 .SH NAME
 lzc_promote \- Reverse clone parent-child relationship
@@ -56,6 +56,11 @@ that alter the behavior of the lzc_promote() function. At the time of writing,
 all data passed to it is ignored and callers should pass NULL to ensure that
 behavior remains the same with future extensions.
 
+The nvlist handle \fIoutnvl\fR is updated with a nvlist containing information
+from the kernel when non-NULL. At present, a \fIconflsnap\fR string is provided
+when a conflicting snapshot triggers EEXIST while a \fIparent\fR string is
+provided on either success or a conflicting snapshot.
+
 .SH RETURN VALUES
 .sp
 .LP
@@ -67,10 +72,22 @@ The \fBlzc_promote()\fR function will fail if:
 .sp
 .ne 2
 .na
+\fB\fBEBUSY\fR\fR
+.ad
+.RS 13n
+There is a long hold on the dataset.
+.RE
+
+.sp
+.ne 2
+.na
 \fB\fBEEXIST\fR\fR
 .ad
 .RS 13n
 The pool was uninitialized and a pool with the same GUID already existed.
+.sp
+There is a conflicting snapshot name. If \fIoutnvl\fR is non-NULL, it will be
+updated with an nvlist containing the string \fIconflsnap\fR.
 .RE
 
 .sp
@@ -122,6 +139,24 @@ The clone \fIfsname\fR does not exist.
 .ad
 .RS 13n
 Not enough space to update property.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBENOTDIR\fR\fR
+.ad
+.RS 13n
+\fIfsname\fR is a snapshot.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBENOTSOCK\fR\fR
+.ad
+.RS 13n
+\fIfsname\fR is not a clone.
 .RE
 
 .sp
