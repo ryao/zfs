@@ -1011,37 +1011,32 @@ send_progress_thread(void *arg)
 {
 	progress_arg_t *pa = arg;
 
-	zfs_cmd_t zc = {"\0"};
 	zfs_handle_t *zhp = pa->pa_zhp;
-	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	unsigned long long bytes;
+	uint64_t bytes;
 	char buf[16];
 
 	time_t t;
 	struct tm *tm;
 
 	assert(zhp->zfs_type == ZFS_TYPE_SNAPSHOT);
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
 
 	if (!pa->pa_parsable)
 		(void) fprintf(stderr, "TIME        SENT   SNAPSHOT\n");
 
 	/*
-	 * Print the progress from ZFS_IOC_SEND_PROGRESS every second.
+	 * Print the progress from lzc_send_progress every second.
 	 */
 	for (;;) {
 		(void) sleep(1);
 
-		zc.zc_cookie = pa->pa_fd;
-		if (zfs_ioctl(hdl, ZFS_IOC_SEND_PROGRESS, &zc) != 0)
+		if (lzc_send_progress(zhp->zfs_name, pa->pa_fd, &bytes) != 0)
 			return ((void *)-1);
 
 		(void) time(&t);
 		tm = localtime(&t);
-		bytes = zc.zc_cookie;
 
 		if (pa->pa_parsable) {
-			(void) fprintf(stderr, "%02d:%02d:%02d\t%llu\t%s\n",
+			(void) fprintf(stderr, "%02d:%02d:%02d\t%"PRIu64"\t%s\n",
 			    tm->tm_hour, tm->tm_min, tm->tm_sec,
 			    bytes, zhp->zfs_name);
 		} else {
@@ -1168,7 +1163,7 @@ dump_snapshot(zfs_handle_t *zhp, void *arg)
 	if (!sdd->dryrun) {
 		/*
 		 * If progress reporting is requested, spawn a new thread to
-		 * poll ZFS_IOC_SEND_PROGRESS at a regular interval.
+		 * poll lzc_send_progress at a regular interval.
 		 */
 		if (sdd->progress) {
 			pa.pa_zhp = zhp;
