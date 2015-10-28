@@ -2124,7 +2124,6 @@ again:
 			    stream_originguid, originguid)) {
 			case 1: {
 				/* promote it! */
-				zfs_cmd_t zc = {"\0"};
 				nvlist_t *origin_nvfs;
 				char *origin_fsname;
 
@@ -2135,11 +2134,7 @@ again:
 				    NULL);
 				VERIFY(0 == nvlist_lookup_string(origin_nvfs,
 				    "name", &origin_fsname));
-				(void) strlcpy(zc.zc_value, origin_fsname,
-				    sizeof (zc.zc_value));
-				(void) strlcpy(zc.zc_name, fsname,
-				    sizeof (zc.zc_name));
-				error = zfs_ioctl(hdl, ZFS_IOC_PROMOTE, &zc);
+				error = lzc_promote(fsname, NULL, NULL);
 				if (error == 0)
 					progress = B_TRUE;
 				break;

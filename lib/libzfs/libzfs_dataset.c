@@ -3493,47 +3493,60 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 int
 zfs_promote(zfs_handle_t *zhp)
 {
-	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	zfs_cmd_t zc = {"\0"};
-	char parent[MAXPATHLEN];
+	nvlist_t *outnvl = NULL;
 	int ret;
-	char errbuf[1024];
 
-	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
-	    "cannot promote '%s'"), zhp->zfs_name);
-
-	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "snapshots can not be promoted"));
-		return (zfs_error(hdl, EZFS_BADTYPE, errbuf));
-	}
-
-	(void) strlcpy(parent, zhp->zfs_dmustats.dds_origin, sizeof (parent));
-	if (parent[0] == '\0') {
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "not a cloned filesystem"));
-		return (zfs_error(hdl, EZFS_BADTYPE, errbuf));
-	}
-
-	(void) strlcpy(zc.zc_value, zhp->zfs_dmustats.dds_origin,
-	    sizeof (zc.zc_value));
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-	ret = zfs_ioctl(hdl, ZFS_IOC_PROMOTE, &zc);
+	ret = lzc_promote(zhp->zfs_name, NULL, &outnvl);
 
 	if (ret != 0) {
-		int save_errno = errno;
+		libzfs_handle_t *hdl = zhp->zfs_hdl;
+		char errbuf[1024];
+		char *conflsnap = "<internal error>";
+		char *parent = "<internal error>";
 
-		switch (save_errno) {
+		ASSERT(outnvl);
+
+		(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
+		    "cannot promote '%s'"), zhp->zfs_name);
+		/*
+		 * We could use zhp->zfs_dmustats.dds_origin instead of getting
+		 * the parent from the kernel, but we get it from the kernel to
+		 * exercise the lzc_promote codepath. The same goes for relying
+		 * on the return value ENOTDIR to tell us about a snapshot
+		 * intead of using zhp->zfs_type == ZFS_TYPE_SNAPSHOT.
+		 */
+		(void) nvlist_lookup_string(outnvl, "conflsnap", &conflsnap);
+		(void) nvlist_lookup_string(outnvl, "parent", &parent);
+
+		switch (ret) {
 		case EEXIST:
-			/* There is a conflicting snapshot name. */
+			/*
+			 * XXX: This is not unamibiguous. See the lzc_promote
+			 * man page.
+			 */
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "conflicting snapshot '%s' from parent '%s'"),
-			    zc.zc_string, parent);
-			return (zfs_error(hdl, EZFS_EXISTS, errbuf));
+			    conflsnap, parent);
+			ret = zfs_error(hdl, EZFS_EXISTS, errbuf);
+			break;
+
+		case ENOTDIR:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "snapshots can not be promoted"));
+			ret = zfs_error(hdl, EZFS_BADTYPE, errbuf);
+			break;
+
+		case ENOTSOCK:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "not a cloned filesystem"));
+			ret = zfs_error(hdl, EZFS_BADTYPE, errbuf);
+			break;
 
 		default:
-			return (zfs_standard_error(hdl, save_errno, errbuf));
+			ret = zfs_standard_error(hdl, ret, errbuf);
+			break;
 		}
+		nvlist_free(outnvl);
 	}
 	return (ret);
 }

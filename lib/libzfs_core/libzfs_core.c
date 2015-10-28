@@ -222,12 +222,9 @@ lzc_clone(const char *fsname, const char *origin,
 }
 
 int
-lzc_promote(const char *fsname, nvlist_t *opts)
+lzc_promote(const char *fsname, nvlist_t *opts, nvlist_t **outnvl)
 {
-	int error;
-
-	error = lzc_ioctl("zfs_promote", fsname, NULL, opts, NULL, 0);
-	return (error);
+	return (lzc_ioctl("zfs_promote", fsname, NULL, opts, outnvl, 0));
 }
 
 int

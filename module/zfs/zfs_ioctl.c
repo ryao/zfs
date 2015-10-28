@@ -5640,20 +5640,36 @@ zfs_stable_ioc_promote(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl,
 		return (error);
 
 	error = dsl_dataset_hold(dp, fsname, FTAG, &clone);
-	if (error == 0) {
-		dd = clone->ds_dir;
-		error = dsl_dataset_hold_obj(dd->dd_pool,
-		    dsl_dir_phys(dd)->dd_origin_obj, FTAG, &origin);
-		if (error != 0) {
-			dsl_dataset_rele(clone, FTAG);
-			dsl_pool_rele(dp, FTAG);
-			return (error);
-		}
-
-		dsl_dataset_name(origin, parentname);
-		dsl_dataset_rele(origin, FTAG);
-		dsl_dataset_rele(clone, FTAG);
+	if (error != 0) {
+		dsl_pool_rele(dp, FTAG);
+		return (error);
 	}
+
+	dd = clone->ds_dir;
+
+	if (clone->ds_is_snapshot) {
+		dsl_dataset_rele(clone, FTAG);
+		dsl_pool_rele(dp, FTAG);
+		return (SET_ERROR(ENOTDIR));
+	}
+
+	if (!dsl_dir_is_clone(dd)) {
+		dsl_dataset_rele(clone, FTAG);
+		dsl_pool_rele(dp, FTAG);
+		return (SET_ERROR(ENOTSOCK));
+	}
+
+	error = dsl_dataset_hold_obj(dd->dd_pool,
+	    dsl_dir_phys(dd)->dd_origin_obj, FTAG, &origin);
+	if (error != 0) {
+		dsl_dataset_rele(clone, FTAG);
+		dsl_pool_rele(dp, FTAG);
+		return (error);
+	}
+
+	dsl_dataset_name(origin, parentname);
+	dsl_dataset_rele(origin, FTAG);
+	dsl_dataset_rele(clone, FTAG);
 	dsl_pool_rele(dp, FTAG);
 
 	/*
@@ -5664,8 +5680,10 @@ zfs_stable_ioc_promote(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl,
 	    zfs_unmount_snap_cb, NULL, DS_FIND_SNAPSHOTS);
 
 	error = dsl_dataset_promote(fsname, conflsnap);
-	if (error != 0)
+	if (error == EEXIST)
 		fnvlist_add_string(outnvl, "conflsnap", conflsnap);
+
+	fnvlist_add_string(outnvl, "parent", parentname);
 
 	return (error);
 }
