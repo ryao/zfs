@@ -2776,45 +2776,53 @@ retry:
 		goto retry;
 	}
 
-	if (!nvlist_empty(genericnvl) &&
-	    (rv = dsl_props_set(dsname, source, genericnvl)) != 0 &&
-	    atomic == B_FALSE) {
+	if (!nvlist_empty(genericnvl)) {
+		int err = dsl_props_set(dsname, source, genericnvl);
+
+		if (err != 0)
+			rv = err;
+
 		/*
-		 * If this fails, we still want to set as many properties as we
-		 * can, so try setting them individually.
+		 * If this fails and non-atomic operation is allowed, we want
+		 * to set as many properties as we can, so try setting them
+		 * individually.
 		 */
-		pair = NULL;
-		while ((pair = nvlist_next_nvpair(genericnvl, pair)) != NULL) {
-			const char *propname = nvpair_name(pair);
-			int err = 0;
+		if (atomic == B_FALSE) {
+			pair = NULL;
+			while ((pair = nvlist_next_nvpair(genericnvl, pair)) !=
+			    NULL) {
+				const char *propname = nvpair_name(pair);
+				err = 0;
 
-			propval = pair;
-			if (nvpair_type(pair) == DATA_TYPE_NVLIST) {
-				nvlist_t *attrs;
-				attrs = fnvpair_value_nvlist(pair);
-				propval = fnvlist_lookup_nvpair(attrs,
-				    ZPROP_VALUE);
-			}
-
-			if (nvpair_type(propval) == DATA_TYPE_STRING) {
-				strval = fnvpair_value_string(propval);
-				err = dsl_prop_set_string(dsname, propname,
-				    source, strval);
-			} else {
-				intval = fnvpair_value_uint64(propval);
-				err = dsl_prop_set_int(dsname, propname, source,
-				    intval);
-			}
-
-			if (err != 0) {
-				if (errlist != NULL) {
-					fnvlist_add_int32(errlist, propname,
-					    err);
+				propval = pair;
+				if (nvpair_type(pair) == DATA_TYPE_NVLIST) {
+					nvlist_t *attrs;
+					attrs = fnvpair_value_nvlist(pair);
+					propval = fnvlist_lookup_nvpair(attrs,
+					    ZPROP_VALUE);
 				}
-				rv = err;
+
+				if (nvpair_type(propval) == DATA_TYPE_STRING) {
+					strval = fnvpair_value_string(propval);
+					err = dsl_prop_set_string(dsname,
+					    propname, source, strval);
+				} else {
+					intval = fnvpair_value_uint64(propval);
+					err = dsl_prop_set_int(dsname,
+					    propname, source, intval);
+				}
+
+				if (err != 0) {
+					if (errlist != NULL) {
+						fnvlist_add_int32(errlist,
+						    propname, err);
+					}
+					rv = err;
+				}
 			}
 		}
 	}
+
 	nvlist_free(genericnvl);
 	nvlist_free(retrynvl);
 
