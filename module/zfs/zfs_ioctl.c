@@ -4567,6 +4567,10 @@ zfs_ioc_send(zfs_cmd_t *zc)
 	return (error);
 }
 
+static int
+zfs_stable_ioc_send_progress(const char *snapname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version);
+
 /*
  * inputs:
  * zc_name	name of snapshot on which to report progress
@@ -4578,46 +4582,20 @@ zfs_ioc_send(zfs_cmd_t *zc)
 static int
 zfs_ioc_send_progress(zfs_cmd_t *zc)
 {
-	dsl_pool_t *dp;
-	dsl_dataset_t *ds;
-	dmu_sendarg_t *dsp = NULL;
-	int error;
+	int ret;
+	nvlist_t *in = fnvlist_alloc();
+	nvlist_t *out = fnvlist_alloc();
 
-	error = dsl_pool_hold(zc->zc_name, FTAG, &dp);
-	if (error != 0)
-		return (error);
+	fnvlist_add_int32(in, "fd", zc->zc_cookie);
 
-	error = dsl_dataset_hold(dp, zc->zc_name, FTAG, &ds);
-	if (error != 0) {
-		dsl_pool_rele(dp, FTAG);
-		return (error);
-	}
+	ret = zfs_stable_ioc_send_progress(zc->zc_name, in, out, NULL, 0);
 
-	mutex_enter(&ds->ds_sendstream_lock);
+	(void) nvlist_lookup_uint64(out, "offset", &zc->zc_cookie);
 
-	/*
-	 * Iterate over all the send streams currently active on this dataset.
-	 * If there's one which matches the specified file descriptor _and_ the
-	 * stream was started by the current process, return the progress of
-	 * that stream.
-	 */
+	fnvlist_free(in);
+	fnvlist_free(out);
 
-	for (dsp = list_head(&ds->ds_sendstreams); dsp != NULL;
-	    dsp = list_next(&ds->ds_sendstreams, dsp)) {
-		if (dsp->dsa_outfd == zc->zc_cookie &&
-		    dsp->dsa_proc->group_leader == curproc->group_leader)
-			break;
-	}
-
-	if (dsp != NULL)
-		zc->zc_cookie = *(dsp->dsa_off);
-	else
-		error = SET_ERROR(ENOENT);
-
-	mutex_exit(&ds->ds_sendstream_lock);
-	dsl_dataset_rele(ds, FTAG);
-	dsl_pool_rele(dp, FTAG);
-	return (error);
+	return (ret);
 }
 
 static int
