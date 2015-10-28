@@ -1785,7 +1785,6 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
     int baselen, char *newname, recvflags_t *flags)
 {
 	static int seq;
-	zfs_cmd_t zc = {"\0"};
 	int err;
 	prop_changelist_t *clp;
 	zfs_handle_t *zhp;
@@ -1802,19 +1801,14 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 	if (err)
 		return (err);
 
-	zc.zc_objset_type = DMU_OST_ZFS;
-	(void) strlcpy(zc.zc_name, name, sizeof (zc.zc_name));
-
 	if (tryname) {
 		(void) strcpy(newname, tryname);
 
-		(void) strlcpy(zc.zc_value, tryname, sizeof (zc.zc_value));
-
 		if (flags->verbose) {
 			(void) printf("attempting rename %s to %s\n",
-			    zc.zc_name, zc.zc_value);
+			    name, tryname);
 		}
-		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
+		err = lzc_rename(name, tryname, NULL, NULL);
 		if (err == 0)
 			changelist_rename(clp, name, tryname);
 	} else {
@@ -1826,13 +1820,12 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 
 		(void) snprintf(newname, ZFS_MAXNAMELEN, "%.*srecv-%u-%u",
 		    baselen, name, getpid(), seq);
-		(void) strlcpy(zc.zc_value, newname, sizeof (zc.zc_value));
 
 		if (flags->verbose) {
 			(void) printf("failed - trying rename %s to %s\n",
-			    zc.zc_name, zc.zc_value);
+			    name, newname);
 		}
-		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
+		err = lzc_rename(name, newname, NULL, NULL);
 		if (err == 0)
 			changelist_rename(clp, name, newname);
 		if (err && flags->verbose) {
