@@ -1526,7 +1526,6 @@ zfs_is_namespace_prop(zfs_prop_t prop)
 int
 zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 {
-	zfs_cmd_t zc = {"\0"};
 	int ret = -1;
 	prop_changelist_t *cl = NULL;
 	char errbuf[1024];
@@ -1588,14 +1587,9 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 		goto error;
 
 	/*
-	 * Execute the corresponding ioctl() to set this property.
+	 * Call libzfs_core to set this property.
 	 */
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-
-	if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0)
-		goto error;
-
-	ret = zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc);
+	ret = lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
 
 	if (ret != 0) {
 		zfs_setprop_error(hdl, prop, errno, errbuf);
@@ -1604,16 +1598,13 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 			uint64_t old_volsize = zfs_prop_get_int(zhp,
 			    ZFS_PROP_VOLSIZE);
 			nvlist_free(nvl);
-			zcmd_free_nvlists(&zc);
 			if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0)
 				goto error;
 			if (nvlist_add_uint64(nvl,
 			    zfs_prop_to_name(ZFS_PROP_VOLSIZE),
 			    old_volsize) != 0)
 				goto error;
-			if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0)
-				goto error;
-			(void) zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc);
+			(void) lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
 		}
 	} else {
 		if (do_prefix)
@@ -1639,7 +1630,6 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 
 error:
 	nvlist_free(nvl);
-	zcmd_free_nvlists(&zc);
 	if (cl)
 		changelist_free(cl);
 	return (ret);

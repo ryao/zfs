@@ -2194,17 +2194,15 @@ again:
 			if (0 == nvlist_lookup_nvlist(stream_nvfs, "snapprops",
 			    &props) && 0 == nvlist_lookup_nvlist(props,
 			    stream_snapname, &props)) {
-				zfs_cmd_t zc = {"\0"};
+				char name[ZFS_MAXNAMELEN];
+				nvlist_t *opts = fnvlist_alloc();
 
-				zc.zc_cookie = B_TRUE; /* received */
-				(void) snprintf(zc.zc_name, sizeof (zc.zc_name),
+				(void) snprintf(name, sizeof (name),
 				    "%s@%s", fsname, nvpair_name(snapelem));
-				if (zcmd_write_src_nvlist(hdl, &zc,
-				    props) == 0) {
-					(void) zfs_ioctl(hdl,
-					    ZFS_IOC_SET_PROP, &zc);
-					zcmd_free_nvlists(&zc);
-				}
+
+				fnvlist_add_boolean(opts, "received");
+				(void) lzc_set_props(name, props, opts, NULL);
+				fnvlist_free(opts);
 			}
 
 			/* check for different snapname */
@@ -3020,14 +3018,11 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 	zcmd_free_nvlists(&zc);
 
 	if (err == 0 && snapprops_nvlist) {
-		zfs_cmd_t zc2 = {"\0"};
-
-		(void) strcpy(zc2.zc_name, zc.zc_value);
-		zc2.zc_cookie = B_TRUE; /* received */
-		if (zcmd_write_src_nvlist(hdl, &zc2, snapprops_nvlist) == 0) {
-			(void) zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc2);
-			zcmd_free_nvlists(&zc2);
-		}
+		nvlist_t *opts = fnvlist_alloc();
+		fnvlist_add_boolean(opts, "received");
+		(void) lzc_set_props(zc.zc_value, snapprops_nvlist, opts,
+		    NULL);
+		fnvlist_free(opts);
 	}
 
 	if (err && (ioctl_errno == ENOENT || ioctl_errno == EEXIST)) {
