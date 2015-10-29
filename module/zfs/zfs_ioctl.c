@@ -6170,6 +6170,8 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	dls->dls_fsname = (name_specified) ? spa_strdup(fsname) : NULL;
 
 	if (!taskq_dispatch(system_taskq, dump_list_strategy, dls, TQ_SLEEP)) {
+		if (dls->dls_fsname)
+			spa_strfree((char *)dls->dls_fsname);
 		kmem_free(dls, sizeof (dls_t));
 		releasef(fd);
 		return (SET_ERROR(ENOMEM));
