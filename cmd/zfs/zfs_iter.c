@@ -424,7 +424,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 		/*
 		 * If given no arguments, iterate over all datasets.
 		 */
-		ret = zfs_iter_generic(g_zfs, NULL, argtype,
+		ret = zfs_iter_generic(g_zfs, NULL, argtype, 0,
 		    (limit_specified) ? limit : -1, limit_specified,
 		    zfs_callback, &cb);
 	} else {
@@ -441,7 +441,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 			}
 			if (zhp != NULL)
 				ret |= zfs_iter_generic(zfs_get_handle(zhp),
-				    zfs_get_name(zhp), argtype,
+				    zfs_get_name(zhp), argtype, 0,
 				    (limit_specified) ? limit : (flags &
 				    ZFS_ITER_RECURSE) ? -1 : 0,
 				    limit_specified, zfs_callback, &cb);

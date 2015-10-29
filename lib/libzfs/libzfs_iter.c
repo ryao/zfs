@@ -86,7 +86,8 @@ zfs_type_to_nvl(zfs_type_t type)
  */
 int
 zfs_iter_generic(libzfs_handle_t *hdl, const char *name, zfs_type_t type,
-    int64_t depth, boolean_t depth_specified, zfs_iter_f func, void *data)
+    int64_t mindepth, int64_t maxdepth, boolean_t depth_specified,
+    zfs_iter_f func, void *data)
 {
 	zfs_cmd_t zc = {"\0"};
 	zfs_handle_t *nzhp;
@@ -112,16 +113,17 @@ zfs_iter_generic(libzfs_handle_t *hdl, const char *name, zfs_type_t type,
 
 	opts = fnvlist_alloc();
 	if (depth_specified) {
-		switch (depth) {
+		switch (maxdepth) {
 		case -1:
 			fnvlist_add_boolean(opts, "recurse");
 		default:
-			if (depth < 0) {
+			if (maxdepth < 0) {
 				fnvlist_free(opts);
 				return (-1);
 			}
-			fnvlist_add_uint64(opts, "recurse", depth);
+			fnvlist_add_uint64(opts, "maxrecurse", maxdepth);
 		}
+		fnvlist_add_uint64(opts, "minrecurse", mindepth);
 	} else
 		fnvlist_add_boolean(opts, "recurse");
 

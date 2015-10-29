@@ -456,7 +456,7 @@ static int
 iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 {
 	if (zfs_iter_generic(hdl, dataset,
-	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME, 0,
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME, 0, 0,
 	    B_FALSE, &iterate_children_cb, zgp) != 0)
 		return (-1);
 
