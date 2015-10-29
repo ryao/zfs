@@ -483,7 +483,7 @@ dsl_prop_notify_all(dsl_dir_t *dd)
 	dsl_pool_t *dp = dd->dd_pool;
 	ASSERT(RRW_WRITE_HELD(&dp->dp_config_rwlock));
 	(void) dmu_objset_find_dp(dp, dd->dd_object, dsl_prop_notify_all_cb,
-	    NULL, DS_FIND_CHILDREN, DS_FIND_MAX_DEPTH);
+	    NULL, DS_FIND_CHILDREN, 0, DS_FIND_MAX_DEPTH);
 }
 
 static void

@@ -763,7 +763,7 @@ dsl_pool_upgrade_clones(dsl_pool_t *dp, dmu_tx_t *tx)
 	ASSERT(dp->dp_origin_snap != NULL);
 
 	VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj, upgrade_clones_cb,
-	    tx, DS_FIND_CHILDREN | DS_FIND_SERIALIZE, DS_FIND_MAX_DEPTH));
+	    tx, DS_FIND_CHILDREN | DS_FIND_SERIALIZE, 0, DS_FIND_MAX_DEPTH));
 }
 
 /* ARGSUSED */
@@ -820,7 +820,7 @@ dsl_pool_upgrade_dir_clones(dsl_pool_t *dp, dmu_tx_t *tx)
 
 	VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
 	    upgrade_dir_clones_cb, tx, DS_FIND_CHILDREN | DS_FIND_SERIALIZE,
-	    DS_FIND_MAX_DEPTH));
+	    0, DS_FIND_MAX_DEPTH));
 }
 
 void

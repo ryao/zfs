@@ -1835,7 +1835,7 @@ dsl_dataset_rename_snapshot_check(void *arg, dmu_tx_t *tx)
 	if (ddrsa->ddrsa_recursive) {
 		error = dmu_objset_find_dp(dp, hds->ds_dir->dd_object,
 		    dsl_dataset_rename_snapshot_check_impl, ddrsa,
-		    DS_FIND_CHILDREN, DS_FIND_MAX_DEPTH);
+		    DS_FIND_CHILDREN, 0, DS_FIND_MAX_DEPTH);
 	} else {
 		error = dsl_dataset_rename_snapshot_check_impl(hds, B_FALSE,
 		    ddrsa);
@@ -1893,7 +1893,7 @@ dsl_dataset_rename_snapshot_sync(void *arg, dmu_tx_t *tx)
 	if (ddrsa->ddrsa_recursive) {
 		VERIFY0(dmu_objset_find_dp(dp, hds->ds_dir->dd_object,
 		    dsl_dataset_rename_snapshot_sync_impl, ddrsa,
-		    DS_FIND_CHILDREN, DS_FIND_MAX_DEPTH));
+		    DS_FIND_CHILDREN, 0, DS_FIND_MAX_DEPTH));
 	} else {
 		VERIFY0(dsl_dataset_rename_snapshot_sync_impl(hds, B_FALSE,
 		    ddrsa));

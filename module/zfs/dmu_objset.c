@@ -1638,7 +1638,8 @@ typedef struct dmu_objset_find_ctx {
 	uint64_t	dc_ddobj;
 	int		(*dc_func)(dsl_dataset_t *, boolean_t, void *);
 	void		*dc_arg;
-	int		dc_depth;
+	int		dc_mindepth;
+	int		dc_maxdepth;
 	int		dc_flags;
 	kmutex_t	*dc_error_lock;
 	int		*dc_error;
@@ -1676,7 +1677,7 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	/*
 	 * Iterate over all children.
 	 */
-	if (dcp->dc_depth && dcp->dc_flags & DS_FIND_CHILDREN) {
+	if (dcp->dc_maxdepth && dcp->dc_flags & DS_FIND_CHILDREN) {
 		for (zap_cursor_init(&zc, dp->dp_meta_objset,
 		    dsl_dir_phys(dd)->dd_child_dir_zapobj);
 		    zap_cursor_retrieve(&zc, attr) == 0;
@@ -1688,8 +1689,10 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 			child_dcp = kmem_alloc(sizeof (*child_dcp), KM_SLEEP);
 			*child_dcp = *dcp;
 			child_dcp->dc_ddobj = attr->za_first_integer;
-			if (child_dcp->dc_depth != DS_FIND_MAX_DEPTH)
-				child_dcp->dc_depth--;
+			if (child_dcp->dc_mindepth != 0)
+				child_dcp->dc_mindepth--;
+			if (child_dcp->dc_maxdepth != DS_FIND_MAX_DEPTH)
+				child_dcp->dc_maxdepth--;
 			if (dcp->dc_tq != NULL)
 				(void) taskq_dispatch(dcp->dc_tq,
 				    dmu_objset_find_dp_cb, child_dcp, TQ_SLEEP);
@@ -1702,7 +1705,7 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	/*
 	 * Iterate over all snapshots.
 	 */
-	if (dcp->dc_depth && dcp->dc_flags & DS_FIND_SNAPSHOTS) {
+	if (dcp->dc_maxdepth && dcp->dc_flags & DS_FIND_SNAPSHOTS) {
 		dsl_dataset_t *ds;
 		err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 
@@ -1735,7 +1738,7 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	dsl_dir_rele(dd, FTAG);
 	kmem_free(attr, sizeof (zap_attribute_t));
 
-	if (err != 0)
+	if (err != 0 || dcp->dc_mindepth != 0)
 		goto out;
 
 	/*
@@ -1744,7 +1747,7 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 	if (err != 0)
 		goto out;
-	err = dcp->dc_func(ds, dcp->dc_depth != 0, dcp->dc_arg);
+	err = dcp->dc_func(ds, dcp->dc_maxdepth != 0, dcp->dc_arg);
 	dsl_dataset_rele(ds, FTAG);
 
 out:
@@ -1788,7 +1791,7 @@ dmu_objset_find_dp_cb(void *arg)
 int
 dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
     int func(dsl_dataset_t *, boolean_t, void *), void *arg, int flags,
-    int depth)
+    int mindepth, int maxdepth)
 {
 	int error = 0;
 	taskq_t *tq = NULL;
@@ -1804,7 +1807,8 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 	dcp->dc_func = func;
 	dcp->dc_arg = arg;
 	dcp->dc_flags = flags;
-	dcp->dc_depth = depth;
+	dcp->dc_mindepth = mindepth;
+	dcp->dc_maxdepth = maxdepth;
 	dcp->dc_error_lock = &err_lock;
 	dcp->dc_error = &error;
 

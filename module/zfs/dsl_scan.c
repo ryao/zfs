@@ -1150,7 +1150,7 @@ dsl_scan_visitds(dsl_scan_t *scn, uint64_t dsobj, dmu_tx_t *tx)
 
 			VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
 			    enqueue_clones_cb, &eca, DS_FIND_CHILDREN,
-			    DS_FIND_MAX_DEPTH));
+			    0, DS_FIND_MAX_DEPTH));
 		}
 	}
 
@@ -1328,7 +1328,7 @@ dsl_scan_visit(dsl_scan_t *scn, dmu_tx_t *tx)
 		if (spa_version(dp->dp_spa) < SPA_VERSION_DSL_SCRUB) {
 			VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
 			    enqueue_cb, tx, DS_FIND_CHILDREN,
-			    DS_FIND_MAX_DEPTH));
+			    0, DS_FIND_MAX_DEPTH));
 		} else {
 			dsl_scan_visitds(scn,
 			    dp->dp_origin_snap->ds_object, tx);

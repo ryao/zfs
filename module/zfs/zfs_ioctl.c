@@ -5983,7 +5983,7 @@ dump_list_strategy_one(dsl_pool_t *dp, uint64_t dd_object,
 	}
 
 	error = dmu_objset_find_dp(dp, dd_object, &dump_ds, dls,
-	    dmu_flags, dls->dls_depth);
+	    dmu_flags, 0, dls->dls_depth);
 
 	return (error);
 }

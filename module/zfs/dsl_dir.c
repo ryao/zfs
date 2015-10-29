@@ -1688,7 +1688,7 @@ dsl_dir_rename_check(void *arg, dmu_tx_t *tx)
 	if (delta > 0) {
 		error = dmu_objset_find_dp(dp, dd->dd_object, dsl_valid_rename,
 		    &delta, DS_FIND_CHILDREN | DS_FIND_SNAPSHOTS,
-		    DS_FIND_MAX_DEPTH);
+		    0, DS_FIND_MAX_DEPTH);
 		if (error != 0) {
 			dsl_dir_rele(newparent, FTAG);
 			dsl_dir_rele(dd, FTAG);

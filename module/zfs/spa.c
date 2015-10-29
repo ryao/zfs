@@ -1793,7 +1793,7 @@ spa_check_logs(spa_t *spa)
 	case SPA_LOG_UNKNOWN:
 		rv = (dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
 		    zil_check_log_chain, NULL, DS_FIND_CHILDREN,
-		    DS_FIND_MAX_DEPTH) != 0);
+		    0, DS_FIND_MAX_DEPTH) != 0);
 		if (rv)
 			spa_set_log_state(spa, SPA_LOG_MISSING);
 		break;
@@ -2793,7 +2793,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 
 		tx = dmu_tx_create_assigned(dp, spa_first_txg(spa));
 		(void) dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
-		    zil_claim, tx, DS_FIND_CHILDREN, DS_FIND_MAX_DEPTH);
+		    zil_claim, tx, DS_FIND_CHILDREN, 0, DS_FIND_MAX_DEPTH);
 		dmu_tx_commit(tx);
 
 		spa->spa_claiming = B_FALSE;
