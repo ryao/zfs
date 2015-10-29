@@ -661,7 +661,7 @@ zil_destroy_sync(zilog_t *zilog, dmu_tx_t *tx)
 }
 
 int
-zil_claim(dsl_dataset_t *ds, boolean_t unused, void *txarg)
+zil_claim(dsl_dataset_t *ds, const char *unused, void *txarg)
 {
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	dmu_tx_t *tx = txarg;
@@ -730,7 +730,7 @@ zil_claim(dsl_dataset_t *ds, boolean_t unused, void *txarg)
  */
 /* ARGSUSED */
 int
-zil_check_log_chain(dsl_dataset_t *ds, boolean_t unused, void *tx)
+zil_check_log_chain(dsl_dataset_t *ds, const char *unused, void *tx)
 {
 	zilog_t *zilog;
 	objset_t *os;

@@ -1635,7 +1635,7 @@ typedef struct dsl_dir_rename_arg {
 
 /* ARGSUSED */
 static int
-dsl_valid_rename(dsl_dataset_t *ds, boolean_t unused, void *arg)
+dsl_valid_rename(dsl_dataset_t *ds, const char *unused, void *arg)
 {
 	int *deltap = arg;
 	char namebuf[MAXNAMELEN];

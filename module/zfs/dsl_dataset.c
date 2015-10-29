@@ -1788,7 +1788,7 @@ typedef struct dsl_dataset_rename_snapshot_arg {
 
 /* ARGSUSED */
 static int
-dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, boolean_t unused,
+dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, const char *unused,
     void *arg)
 {
 	dsl_dataset_rename_snapshot_arg_t *ddrsa = arg;
@@ -1845,7 +1845,7 @@ dsl_dataset_rename_snapshot_check(void *arg, dmu_tx_t *tx)
 }
 
 static int
-dsl_dataset_rename_snapshot_sync_impl(dsl_dataset_t *hds, boolean_t unused,
+dsl_dataset_rename_snapshot_sync_impl(dsl_dataset_t *hds, const char *unused,
     void *arg)
 {
 	dsl_dataset_rename_snapshot_arg_t *ddrsa = arg;

@@ -5779,7 +5779,8 @@ typedef struct dls {
 	struct task_struct *dls_task;
 	uf_info_t *dls_fip;
 	vnode_t *dls_vp;
-	uint64_t dls_depth;
+	uint64_t dls_mindepth;
+	uint64_t dls_maxdepth;
 	dls_flag_t dls_flags;
 	const char *dls_fsname;
 } dls_t;
@@ -5852,7 +5853,7 @@ dump_fs(vnode_t *vp, const char *fsname, nvlist_t *nvprops, dmu_objset_stats_t
 }
 
 static int
-dump_ds(dsl_dataset_t *ds, boolean_t recurse, void *data)
+dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 {
 	dls_t *dls = data;
 	static const size_t fsname_len = MAXNAMELEN + STRLEN(MOS_DIR_NAME) + 1;
@@ -5862,24 +5863,58 @@ dump_ds(dsl_dataset_t *ds, boolean_t recurse, void *data)
 	char *fsname;
 	dmu_objset_stats_t objset_stats;
 	boolean_t issnap;
-	int err;
+	int err = 0;
 
 	dp = ds->ds_dir->dd_pool;
 	dmu_objset_from_ds(ds, &osp);
-	err = zfs_ioc_objset_stats_impl_nohold(&nvl,
-	    &objset_stats, osp, B_TRUE);
-	if (err)
-		return (err);
 
 	fsname = kmem_alloc(fsname_len, KM_SLEEP);
 	dmu_objset_name(osp, fsname);
 
 	/* Restrict access to hidden datasets from zones */
-	if (dataset_name_hidden(fsname)) {
-		fnvlist_free(nvl);
-		kmem_free(fsname, fsname_len);
-		return (0);
+	if (dataset_name_hidden(fsname))
+		goto out1;
+
+	if (bmark) {
+		if ((dls->dls_flags & DLS_TRAVERSE_BOOKMARK)) {
+			zfs_bookmark_phys_t bmark_phys;
+			const char *target_bname = NULL;
+			char *full_name;
+			if (dls->dls_fsname) {
+				target_bname = strchr(dls->dls_fsname, '#');
+				if (target_bname &&
+				    strcmp(bmark, target_bname + 1) != 0)
+					goto out1;
+			}
+
+			err = dsl_bookmark_lookup_ds(ds, bmark, &bmark_phys);
+			if (err != 0)
+				goto out1;
+
+			dmu_objset_fast_stat(osp, &objset_stats);
+
+			nvl = fnvlist_alloc();
+			dsl_prop_nvlist_add_uint64(nvl,
+			    ZFS_PROP_GUID, bmark_phys.zbm_guid);
+			dsl_prop_nvlist_add_uint64(nvl,
+			    ZFS_PROP_CREATETXG, bmark_phys.zbm_creation_txg);
+			dsl_prop_nvlist_add_uint64(nvl,
+			    ZFS_PROP_CREATION, bmark_phys.zbm_creation_time);
+
+			full_name = kmem_asprintf("%s#%s", fsname, bmark);
+			err = dump_fs(dls->dls_vp, full_name, nvl,
+			    &objset_stats);
+			strfree(full_name);
+			fnvlist_free(nvl);
+		}
+
+		goto out1;
 	}
+
+	err = zfs_ioc_objset_stats_impl_nohold(&nvl,
+	    &objset_stats, osp, B_TRUE);
+	if (err)
+		goto out1;
 
 	issnap = objset_stats.dds_is_snapshot != 0;
 	ASSERT(issnap == ((strchr(fsname, '@') != NULL)));
@@ -5889,73 +5924,32 @@ dump_ds(dsl_dataset_t *ds, boolean_t recurse, void *data)
 		if (!(issnap && (dls->dls_flags &&
 		    DLS_TRAVERSE_SNAPSHOT)) &&
 		    !(dls->dls_flags & DLS_TRAVERSE_FILESYSTEM))
-			goto skip;
+			goto out2;
 		break;
 	case DMU_OST_ZVOL:
 		if (!(issnap && (dls->dls_flags &&
 		    DLS_TRAVERSE_SNAPSHOT)) &&
 		    !(dls->dls_flags & DLS_TRAVERSE_VOLUME))
-			goto skip;
+			goto out2;
 		break;
 		default:
 			ASSERT(0);
-			goto skip;
+			goto out2;
 	}
 
 	if (issnap && (dls->dls_flags & DLS_TRAVERSE_SNAPSHOT) &&
 	    dls->dls_fsname && (strchr(dls->dls_fsname, '@') != NULL) &&
 	    strcmp(dls->dls_fsname, fsname) != 0)
-		goto skip;
+		goto out2;
 	if (!issnap && dls->dls_fsname &&
 	    (strchr(dls->dls_fsname, '@') != NULL))
-		goto skip;
+		goto out2;
 
 	err = dump_fs(dls->dls_vp, fsname, nvl, &objset_stats);
 
-skip:
+out2:
 	fnvlist_free(nvl);
-	if ((err == 0) && !issnap && recurse &&
-	    (dls->dls_flags & DLS_TRAVERSE_BOOKMARK)) {
-		nvlist_t *innvl = fnvlist_alloc();
-		nvlist_t *outnvl = fnvlist_alloc();
-		boolean_t one = (dls->dls_fsname &&
-		    strchr(dls->dls_fsname, '#') != NULL);
-
-		fnvlist_add_boolean(innvl, zfs_prop_to_name(ZFS_PROP_GUID));
-		fnvlist_add_boolean(innvl,
-		    zfs_prop_to_name(ZFS_PROP_CREATETXG));
-		fnvlist_add_boolean(innvl,
-		    zfs_prop_to_name(ZFS_PROP_CREATION));
-
-		if (dsl_get_bookmarks_impl(ds, innvl, outnvl) == 0) {
-			nvpair_t *pair;
-			for (pair = nvlist_next_nvpair(outnvl, NULL);
-			    pair != NULL;
-			    pair = nvlist_next_nvpair(outnvl, pair)) {
-				nvlist_t *nvl = NULL;
-				char *bname = kmem_asprintf("%s#%s", fsname,
-				    nvpair_name(pair));
-				VERIFY0(nvpair_value_nvlist(pair, &nvl));
-
-				if (one &&
-				    strcmp(dls->dls_fsname, bname) == 0) {
-					strfree(bname);
-					continue;
-				}
-
-				err = dump_fs(dls->dls_vp, bname, nvl,
-				    &objset_stats);
-				strfree(bname);
-				if (err || one)
-					break;
-
-			}
-
-		}
-		fnvlist_free(innvl);
-		fnvlist_free(outnvl);
-	}
-
+out1:
 	kmem_free(fsname, fsname_len);
 
 	return (err);
@@ -5966,6 +5960,10 @@ dump_list_strategy_one(dsl_pool_t *dp, uint64_t dd_object,
     int dmu_flags, dls_t *dls)
 {
 	int error;
+
+	if (dls->dls_flags & DLS_TRAVERSE_BOOKMARK) {
+		dmu_flags |= DS_FIND_BOOKMARKS;
+	}
 
 	if (dls->dls_flags & DLS_TRAVERSE_SNAPSHOT) {
 		dmu_flags |= DS_FIND_SNAPSHOTS;
@@ -5983,7 +5981,7 @@ dump_list_strategy_one(dsl_pool_t *dp, uint64_t dd_object,
 	}
 
 	error = dmu_objset_find_dp(dp, dd_object, &dump_ds, dls,
-	    dmu_flags, 0, dls->dls_depth);
+	    dmu_flags, dls->dls_mindepth, dls->dls_maxdepth);
 
 	return (error);
 }
@@ -6078,7 +6076,8 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	nvlist_t *type = NULL;
 	dls_t *dls;
 	dls_flag_t dls_flags = 0;
-	uint64_t depth = DS_FIND_MAX_DEPTH;
+	uint64_t mindepth = 0;
+	uint64_t maxdepth = DS_FIND_MAX_DEPTH;
 	boolean_t name_specified = fsname != NULL && fsname[0] != '\0';
 	int error;
 
@@ -6114,9 +6113,18 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 
 	if (nvlist_exists(opts, "recurse")) {
 		dls_flags |= DLS_RECURSE;
-		(void) nvlist_lookup_uint64(opts, "recurse", &depth);
+		(void) nvlist_lookup_uint64(opts, "recurse", &maxdepth);
 	} else if (name_specified) {
-		depth = 0;
+		maxdepth = 0;
+	}
+
+	if (nvlist_exists(opts, "maxrecurse") ||
+	    nvlist_exists(opts, "minrecurse")) {
+		dls_flags |= DLS_RECURSE;
+		(void) nvlist_lookup_uint64(opts, "minrecurse", &mindepth);
+		(void) nvlist_lookup_uint64(opts, "maxrecurse", &maxdepth);
+		if (mindepth > maxdepth)
+			return (EINVAL);
 	}
 
 	/* Pass an object number when given a DSL directory name */
@@ -6138,8 +6146,6 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 		} else if ((strchr(fsname, '@') != NULL)) {
 			dls_flags |= DLS_TRAVERSE_SNAPSHOT;
 			dls_flags &= ~DLS_RECURSE;
-			/* XXX: We need a depth of 1 to reach the snapshot */
-			depth = 1;
 		} else if (nvlist_empty(type)) {
 		/* Adopt sane defaults based on the DSL directory */
 			objset_t *osp;
@@ -6165,7 +6171,8 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	dls->dls_fd = fd;
 	dls->dls_fip = P_FINFO(curproc);
 	dls->dls_vp = fp->f_vnode;
-	dls->dls_depth = depth;
+	dls->dls_mindepth = mindepth;
+	dls->dls_maxdepth = maxdepth;
 	dls->dls_flags = dls_flags;
 	dls->dls_fsname = (name_specified) ? spa_strdup(fsname) : NULL;
 

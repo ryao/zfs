@@ -1021,7 +1021,7 @@ struct enqueue_clones_arg {
 
 /* ARGSUSED */
 static int
-enqueue_clones_cb(dsl_dataset_t *hds, boolean_t unused, void *arg)
+enqueue_clones_cb(dsl_dataset_t *hds, const char *unused, void *arg)
 {
 	dsl_pool_t *dp = hds->ds_dir->dd_pool;
 	struct enqueue_clones_arg *eca = arg;
@@ -1160,7 +1160,7 @@ out:
 
 /* ARGSUSED */
 static int
-enqueue_cb(dsl_dataset_t *hds, boolean_t unused, void *arg)
+enqueue_cb(dsl_dataset_t *hds, const char *unused, void *arg)
 {
 	dsl_pool_t *dp = hds->ds_dir->dd_pool;
 	dmu_tx_t *tx = arg;

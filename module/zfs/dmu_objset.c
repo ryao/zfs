@@ -1636,7 +1636,7 @@ typedef struct dmu_objset_find_ctx {
 	taskq_t		*dc_tq;
 	dsl_pool_t	*dc_dp;
 	uint64_t	dc_ddobj;
-	int		(*dc_func)(dsl_dataset_t *, boolean_t, void *);
+	int		(*dc_func)(dsl_dataset_t *, const char *, void *);
 	void		*dc_arg;
 	int		dc_mindepth;
 	int		dc_maxdepth;
@@ -1705,7 +1705,8 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	/*
 	 * Iterate over all snapshots.
 	 */
-	if (dcp->dc_maxdepth && dcp->dc_flags & DS_FIND_SNAPSHOTS) {
+	if (dcp->dc_maxdepth && dcp->dc_mindepth < 2 &&
+	    dcp->dc_flags & DS_FIND_SNAPSHOTS) {
 		dsl_dataset_t *ds;
 		err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 
@@ -1726,12 +1727,39 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 				    attr->za_first_integer, FTAG, &ds);
 				if (err != 0)
 					break;
-				err = dcp->dc_func(ds, B_FALSE, dcp->dc_arg);
+				err = dcp->dc_func(ds, NULL, dcp->dc_arg);
 				dsl_dataset_rele(ds, FTAG);
 				if (err != 0)
 					break;
 			}
 			zap_cursor_fini(&zc);
+		}
+	}
+
+	/*
+	 * Iterate over all bookmarks.
+	 */
+	if (dcp->dc_maxdepth && dcp->dc_mindepth < 2 &&
+	     dcp->dc_flags & DS_FIND_BOOKMARKS) {
+		err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
+
+		if (err == 0) {
+			uint64_t bookobj = ds->ds_bookmarks;
+
+			if (bookobj != 0) {
+				for (zap_cursor_init(&zc, dp->dp_meta_objset,
+				    bookobj);
+				    zap_cursor_retrieve(&zc, attr) == 0;
+				    zap_cursor_advance(&zc)) {
+						err = dcp->dc_func(ds,
+						    attr->za_name,
+						    dcp->dc_arg);
+						if (err != 0)
+							break;
+				}
+				zap_cursor_fini(&zc);
+			}
+			dsl_dataset_rele(ds, FTAG);
 		}
 	}
 
@@ -1747,7 +1775,7 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 	if (err != 0)
 		goto out;
-	err = dcp->dc_func(ds, dcp->dc_maxdepth != 0, dcp->dc_arg);
+	err = dcp->dc_func(ds, NULL, dcp->dc_arg);
 	dsl_dataset_rele(ds, FTAG);
 
 out:
@@ -1790,7 +1818,7 @@ dmu_objset_find_dp_cb(void *arg)
  */
 int
 dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
-    int func(dsl_dataset_t *, boolean_t, void *), void *arg, int flags,
+    int func(dsl_dataset_t *, const char *, void *), void *arg, int flags,
     int mindepth, int maxdepth)
 {
 	int error = 0;
@@ -1959,6 +1987,38 @@ dmu_objset_find_impl(spa_t *spa, const char *name,
 					break;
 			}
 			zap_cursor_fini(&zc);
+		}
+	}
+
+	/*
+	 * Iterate over all bookmarks.
+	 */
+	if (flags & DS_FIND_BOOKMARKS) {
+		err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
+
+		if (err == 0) {
+			uint64_t bookobj;
+
+			bookobj = ds->ds_bookmarks;
+			dsl_dataset_rele(ds, FTAG);
+
+			if (bookobj != 0) {
+				for (zap_cursor_init(&zc, dp->dp_meta_objset,
+				    bookobj);
+				    zap_cursor_retrieve(&zc, attr) == 0;
+				    zap_cursor_advance(&zc)) {
+						child = kmem_asprintf("%s#%s",
+						    name, attr->za_name);
+						dsl_pool_config_exit(dp, FTAG);
+						err = func(child, arg);
+						dsl_pool_config_enter(dp,
+						    FTAG);
+						strfree(child);
+						if (err != 0)
+							break;
+				}
+				zap_cursor_fini(&zc);
+			}
 		}
 	}
 

@@ -678,7 +678,7 @@ dsl_pool_undirty_space(dsl_pool_t *dp, int64_t space, uint64_t txg)
 
 /* ARGSUSED */
 static int
-upgrade_clones_cb(dsl_dataset_t *hds, boolean_t unused, void *arg)
+upgrade_clones_cb(dsl_dataset_t *hds, const char *unused, void *arg)
 {
 	dsl_pool_t *dp = hds->ds_dir->dd_pool;
 	dmu_tx_t *tx = arg;
@@ -768,7 +768,7 @@ dsl_pool_upgrade_clones(dsl_pool_t *dp, dmu_tx_t *tx)
 
 /* ARGSUSED */
 static int
-upgrade_dir_clones_cb(dsl_dataset_t *ds, boolean_t unused, void *arg)
+upgrade_dir_clones_cb(dsl_dataset_t *ds, const char *unused, void *arg)
 {
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	dmu_tx_t *tx = arg;
