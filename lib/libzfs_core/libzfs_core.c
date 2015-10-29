@@ -995,7 +995,7 @@ lzc_rename(const char *oldname, const char *newname, nvlist_t *opts,
  * "dds_type"		string		Type
  * "dds_is_snapshot"	boolean		Is a snapshot
  * "dds_inconsistent"	boolean		Is being received or destroyed
- * "dds_origin"		string		Name of parent
+ * "dds_origin"		string		Name of parent (clone)
  *
  * Additional members may be added in future extensions.
  *
