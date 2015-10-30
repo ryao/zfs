@@ -285,25 +285,37 @@ zpool_free_handles(libzfs_handle_t *hdl)
 	hdl->libzfs_pool_handles = NULL;
 }
 
+static int
+get_objset_stats_cb(zfs_handle_t *zhp, void *data)
+{
+	zfs_cmd_t *zc = data;
+	size_t size;
+	char *packed = fnvlist_pack(zhp->zfs_props, &size);
+
+	if (zc->zc_nvlist_dst_size < size) {
+		zc->zc_nvlist_dst_size = size;
+		if (zcmd_expand_dst_nvlist(zhp->zfs_hdl, zc) == -1)
+			return (-1);
+	}
+
+	zc->zc_nvlist_dst_size = size;
+	memcpy((void *)zc->zc_nvlist_dst, packed, size);
+	fnvlist_pack_free(packed, size);
+
+	zc->zc_objset_stats = zhp->zfs_dmustats;
+	return (0);
+}
+
 /*
  * Utility function to gather stats (objset and zpl) for the given object.
  */
 static int
 get_stats_ioctl(zfs_handle_t *zhp, zfs_cmd_t *zc)
 {
-	libzfs_handle_t *hdl = zhp->zfs_hdl;
+	if (zfs_iter_generic(zhp->zfs_hdl, zc->zc_name, 0, 0, 0, B_TRUE,
+	    &get_objset_stats_cb, zc) != 0)
+		return (-1);
 
-	(void) strlcpy(zc->zc_name, zhp->zfs_name, sizeof (zc->zc_name));
-
-	while (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, zc) != 0) {
-		if (errno == ENOMEM) {
-			if (zcmd_expand_dst_nvlist(hdl, zc) != 0) {
-				return (-1);
-			}
-		} else {
-			return (-1);
-		}
-	}
 	return (0);
 }
 
@@ -2924,8 +2936,8 @@ static int
 check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
     boolean_t accept_ancestor, int *prefixlen)
 {
-	zfs_cmd_t zc = {"\0"};
 	char parent[ZFS_MAXNAMELEN];
+	char pool[ZFS_MAXNAMELEN];
 	char *slash;
 	zfs_handle_t *zhp;
 	char errbuf[1024];
@@ -2944,12 +2956,10 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 	/* check to see if the pool exists */
 	if ((slash = strchr(parent, '/')) == NULL)
 		slash = parent + strlen(parent);
-	(void) strncpy(zc.zc_name, parent, slash - parent);
-	zc.zc_name[slash - parent] = '\0';
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0 &&
-	    errno == ENOENT) {
+	(void) strncpy(pool, parent, slash - parent);
+	if (lzc_exists(pool) != B_TRUE) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "no such pool '%s'"), zc.zc_name);
+		    "no such pool '%s'"), pool);
 		return (zfs_error(hdl, EZFS_NOENT, errbuf));
 	}
 
@@ -2961,7 +2971,7 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 			 */
 			if (parent_name(parent, parent, sizeof (parent)) != 0) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-				    "no such pool '%s'"), zc.zc_name);
+				    "no such pool '%s'"), pool);
 				return (zfs_error(hdl, EZFS_NOENT, errbuf));
 			}
 		} else if (errno == ENOENT) {

@@ -463,6 +463,24 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 	return (0);
 }
 
+static int
+get_objset_stats_cb(zfs_handle_t *zhp, void *data)
+{
+	dmu_objset_stats_t *stats = data;
+	*stats = zhp->zfs_dmustats;
+	return (0);
+
+}
+int
+get_objset_stats(libzfs_handle_t *hdl, const char *dataset, dmu_objset_stats_t *stats)
+{
+	if (zfs_iter_generic(hdl, dataset, 0, 0, 0, B_TRUE,
+	    &get_objset_stats_cb, stats) != 0)
+		return (-1);
+
+	return (0);
+}
+
 /*
  * Returns false if there are no snapshots with dependent clones in this
  * subtree or if all of those clones are also in this subtree.  Returns
@@ -471,26 +489,24 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 static boolean_t
 external_dependents(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 {
-	zfs_cmd_t zc = {"\0"};
+	dmu_objset_stats_t stats;
 
 	/*
 	 * Check whether this dataset is a clone or has clones since
 	 * iterate_children() only checks the children.
 	 */
-	(void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
+	if (get_objset_stats(hdl, dataset, &stats) != 0)
 		return (B_TRUE);
 
-	if (zc.zc_objset_stats.dds_origin[0] != '\0') {
-		if (zfs_graph_add(hdl, zgp,
-		    zc.zc_objset_stats.dds_origin, zc.zc_name,
-		    zc.zc_objset_stats.dds_creation_txg) != 0)
+	if (stats.dds_origin[0] != '\0') {
+		if (zfs_graph_add(hdl, zgp, stats.dds_origin, dataset,
+		    stats.dds_creation_txg) != 0)
 			return (B_TRUE);
-		if (isa_child_of(zc.zc_objset_stats.dds_origin, dataset))
+		if (isa_child_of(stats.dds_origin, dataset))
 			zgp->zg_clone_count--;
 	}
 
-	if ((zc.zc_objset_stats.dds_num_clones) ||
+	if ((stats.dds_num_clones) ||
 	    iterate_children(hdl, zgp, dataset))
 		return (B_TRUE);
 

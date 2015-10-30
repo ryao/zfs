@@ -1204,11 +1204,11 @@ dump_filesystem(zfs_handle_t *zhp, void *arg)
 	int rv = 0;
 	send_dump_data_t *sdd = arg;
 	boolean_t missingfrom = B_FALSE;
-	zfs_cmd_t zc = {"\0"};
+	char name[ZFS_MAXNAMELEN];
 
-	(void) snprintf(zc.zc_name, sizeof (zc.zc_name), "%s@%s",
+	(void) snprintf(name, sizeof (name), "%s@%s",
 	    zhp->zfs_name, sdd->tosnap);
-	if (ioctl(zhp->zfs_hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0) {
+	if (lzc_exists(name) != B_TRUE) {
 		(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
 		    "WARNING: could not send %s@%s: does not exist\n"),
 		    zhp->zfs_name, sdd->tosnap);
@@ -1224,10 +1224,9 @@ dump_filesystem(zfs_handle_t *zhp, void *arg)
 		 * is a clone).  If we're doing non-recursive, then let
 		 * them get the error.
 		 */
-		(void) snprintf(zc.zc_name, sizeof (zc.zc_name), "%s@%s",
+		(void) snprintf(name, sizeof (name), "%s@%s",
 		    zhp->zfs_name, sdd->fromsnap);
-		if (ioctl(zhp->zfs_hdl->libzfs_fd,
-		    ZFS_IOC_OBJSET_STATS, &zc) != 0) {
+		if (lzc_exists(name) != B_TRUE) {
 			missingfrom = B_TRUE;
 		}
 	}
