@@ -2956,7 +2956,8 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 	/* check to see if the pool exists */
 	if ((slash = strchr(parent, '/')) == NULL)
 		slash = parent + strlen(parent);
-	(void) strncpy(pool, parent, slash - parent);
+	strncpy(pool, parent, slash - parent);
+	pool[slash - parent] = '\0';
 	if (lzc_exists(pool) != B_TRUE) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "no such pool '%s'"), pool);
