@@ -474,7 +474,7 @@ get_objset_stats_cb(zfs_handle_t *zhp, void *data)
 int
 get_objset_stats(libzfs_handle_t *hdl, const char *dataset, dmu_objset_stats_t *stats)
 {
-	if (zfs_iter_generic(hdl, dataset, 0, 0, 0, B_TRUE,
+	if (zfs_iter_generic(hdl, dataset, 0, 0, 0, B_FALSE,
 	    &get_objset_stats_cb, stats) != 0)
 		return (-1);
 
