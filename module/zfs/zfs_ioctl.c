@@ -6176,6 +6176,17 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	dls->dls_flags = dls_flags;
 	dls->dls_fsname = (name_specified) ? spa_strdup(fsname) : NULL;
 
+	/*
+	 * XXX: Userland can block indefinitely if the number of streams
+	 * exceeds the number of taskq threads. On Linux, system_taskq is not a
+	 * dynamic taskq and the number of threads varies based on the number
+	 * of processors. On a uni-processor system, it is very easy to
+	 * deadlock userland, so we make a new thread to avoid that.
+	 */
+#ifdef __linux__
+	(void) thread_create(NULL, 0, dump_list_strategy, dls, 0, &p0,
+	    TS_RUN, defclsyspri);
+#else
 	if (!taskq_dispatch(system_taskq, dump_list_strategy, dls, TQ_SLEEP)) {
 		if (dls->dls_fsname)
 			spa_strfree((char *)dls->dls_fsname);
@@ -6183,6 +6194,7 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 		releasef(fd);
 		return (SET_ERROR(ENOMEM));
 	}
+#endif
 
 	return (error);
 }
