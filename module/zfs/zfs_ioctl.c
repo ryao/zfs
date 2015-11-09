@@ -2572,7 +2572,8 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 		if (zfs_prop_string_to_index(prop, strval, &intval) != 0)
 			return (-1);
 	} else
-		VERIFY(0 == nvpair_value_uint64(pair, &intval));
+		if (nvpair_value_uint64(pair, &intval) != 0)
+			return (-1);
 
 	switch (prop) {
 	case ZFS_PROP_FILESYSTEM_LIMIT:
