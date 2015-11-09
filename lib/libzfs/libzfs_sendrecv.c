@@ -664,6 +664,8 @@ send_iterate_prop(zfs_handle_t *zhp, nvlist_t *nv)
 	while ((elem = nvlist_next_nvpair(zhp->zfs_props, elem)) != NULL) {
 		char *propname = nvpair_name(elem);
 		zfs_prop_t prop = zfs_name_to_prop(propname);
+		char *strval;
+		uint64_t intval;
 		nvlist_t *propnv;
 
 		if (!zfs_prop_user(propname)) {
@@ -713,17 +715,41 @@ send_iterate_prop(zfs_handle_t *zhp, nvlist_t *nv)
 				continue;
 		}
 
-		if (zfs_prop_user(propname) ||
-		    zfs_prop_get_type(prop) == PROP_TYPE_STRING) {
-			char *value;
-			verify(nvlist_lookup_string(propnv,
-			    ZPROP_VALUE, &value) == 0);
-			VERIFY(0 == nvlist_add_string(nv, propname, value));
-		} else {
-			uint64_t value;
-			verify(nvlist_lookup_uint64(propnv,
-			    ZPROP_VALUE, &value) == 0);
-			VERIFY(0 == nvlist_add_uint64(nv, propname, value));
+		switch (nvpair_type(elem)){
+		case DATA_TYPE_STRING:
+			switch (zfs_prop_get_type(prop)) {
+			default:
+				if (!zfs_prop_user(propname))
+					VERIFY(0);
+			case PROP_TYPE_STRING:
+				strval = fnvlist_lookup_string(propnv,
+				    ZPROP_VALUE);
+				fnvlist_add_string(nv, propname, strval);
+				break;
+			/*
+			 * XXX: Index properties as strings are translated into
+			 * index properties as integers for backward
+			 * compatibility for now, but we should switch to
+			 * sending strings in send streams in the future.
+			 */
+			case PROP_TYPE_INDEX:
+				nvpair_value_string(elem, &strval);
+				VERIFY0(zfs_prop_string_to_index(prop,
+				    strval, &intval));
+				fnvlist_add_uint64(nv, propname, intval);
+				break;
+				VERIFY(0); /* not allowed */
+			}
+			break;
+
+		case DATA_TYPE_UINT64:
+			nvpair_value_uint64(elem, &intval);
+			fnvlist_add_uint64(nv, propname, intval);
+			break;
+
+		default:
+			VERIFY(0); /* not allowed */
+			break;
 		}
 	}
 }
