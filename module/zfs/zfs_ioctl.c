@@ -349,19 +349,32 @@ zpl_earlier_version(const char *name, int version)
 }
 
 static void
-zfs_log_history(zfs_cmd_t *zc)
+zfs_log_history_impl(const char *poolname, const char *buf)
 {
 	spa_t *spa;
+
+	ASSERT(poolname);
+
+	if (buf == NULL)
+		return;
+
+	if (spa_open(poolname, &spa, FTAG) == 0) {
+		if (spa_version(spa) >= SPA_VERSION_ZPOOL_HISTORY)
+			(void) spa_history_log(spa, buf);
+		spa_close(spa, FTAG);
+	}
+}
+
+static void
+zfs_log_history(zfs_cmd_t *zc)
+{
 	char *buf;
 
 	if ((buf = history_str_get(zc)) == NULL)
 		return;
 
-	if (spa_open(zc->zc_name, &spa, FTAG) == 0) {
-		if (spa_version(spa) >= SPA_VERSION_ZPOOL_HISTORY)
-			(void) spa_history_log(spa, buf);
-		spa_close(spa, FTAG);
-	}
+	zfs_log_history_impl(zc->zc_name, buf);
+
 	history_str_free(buf);
 }
 
@@ -1627,17 +1640,26 @@ zfs_ioc_pool_import(zfs_cmd_t *zc)
 }
 
 static int
-zfs_ioc_pool_export(zfs_cmd_t *zc)
+zpool_export(const char *poolname, boolean_t force, boolean_t hardforce)
 {
 	int error;
+
+	error = spa_export(poolname, NULL, force, hardforce);
+	if (error == 0)
+		zvol_remove_minors(poolname);
+
+	return (error);
+
+}
+static int
+zfs_ioc_pool_export(zfs_cmd_t *zc)
+{
 	boolean_t force = (boolean_t)zc->zc_cookie;
 	boolean_t hardforce = (boolean_t)zc->zc_guid;
 
 	zfs_log_history(zc);
-	error = spa_export(zc->zc_name, NULL, force, hardforce);
-	if (error == 0)
-		zvol_remove_minors(zc->zc_name);
-	return (error);
+
+	return (zpool_export(zc->zc_name, force, hardforce));
 }
 
 static int
@@ -6222,12 +6244,33 @@ zfs_stable_ioc_zfs_exists(const char *fsname, nvlist_t *innvl,
 	return (error);
 }
 
+static int
+zfs_stable_ioc_zpool_export(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	boolean_t force = nvlist_exists(opts, "force");
+	boolean_t hardforce = nvlist_exists(opts, "hardforce");
+	const char *history;
+
+	if (nvlist_lookup_string(opts, "history", (char **)&history) == 0)
+		zfs_log_history_impl(poolname, history);
+
+	return (zpool_export(poolname, force, hardforce));
+}
 /*
  * ioctl table for stable interface.
  * Functions use zfs_/zpool_ prefixes to distinguish between their uses
  * XXX: Sort entries and implement binary search.
  */
 static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
+{	.zvec_name		= "zpool_export",
+	.zvec_func		= zfs_stable_ioc_zpool_export,
+	.zvec_secpolicy		= zfs_secpolicy_config,
+	.zvec_namecheck		= POOL_NAME,
+	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_TRUE,
+},
 {	.zvec_name		= "zfs_snapshot",
 	.zvec_func		= zfs_stable_ioc_zfs_snapshot,
 	.zvec_secpolicy		= zfs_secpolicy_snapshot,

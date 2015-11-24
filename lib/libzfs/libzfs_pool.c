@@ -1466,18 +1466,19 @@ static int
 zpool_export_common(zpool_handle_t *zhp, boolean_t force, boolean_t hardforce,
     const char *log_str)
 {
-	zfs_cmd_t zc = {"\0"};
+	nvlist_t *opts = fnvlist_alloc();
 	char msg[1024];
 
 	(void) snprintf(msg, sizeof (msg), dgettext(TEXT_DOMAIN,
 	    "cannot export '%s'"), zhp->zpool_name);
 
-	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
-	zc.zc_cookie = force;
-	zc.zc_guid = hardforce;
-	zc.zc_history = (uint64_t)(uintptr_t)log_str;
+	fnvlist_add_string(opts, "history", log_str);
+	if (force)
+		fnvlist_add_boolean(opts, "force");
+	if (hardforce)
+		fnvlist_add_boolean(opts, "hardforce");
 
-	if (zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_EXPORT, &zc) != 0) {
+	if (lzc_pool_export(zhp->zpool_name, opts) != 0) {
 		switch (errno) {
 		case EXDEV:
 			zfs_error_aux(zhp->zpool_hdl, dgettext(TEXT_DOMAIN,
@@ -1492,6 +1493,8 @@ zpool_export_common(zpool_handle_t *zhp, boolean_t force, boolean_t hardforce,
 			    msg));
 		}
 	}
+
+	fnvlist_free(opts);
 
 	return (0);
 }

@@ -195,6 +195,12 @@ lzc_ioctl(const char *cmd, const char *name, nvlist_t *source,
 }
 
 int
+lzc_pool_export(const char *pool, nvlist_t *opts)
+{
+	return(lzc_ioctl("zpool_export", pool, NULL, opts, NULL, 0));
+}
+
+int
 lzc_create(const char *fsname, dmu_objset_type_t type, nvlist_t *props)
 {
 	int error;
