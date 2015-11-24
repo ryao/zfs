@@ -267,7 +267,7 @@ boolean_t dsl_dataset_is_dirty(dsl_dataset_t *ds);
 int dsl_dataset_activate_large_blocks(const char *dsname);
 void dsl_dataset_activate_large_blocks_sync_impl(uint64_t dsobj, dmu_tx_t *tx);
 
-int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
+int dsl_dsobj_to_dsname(const char *pname, uint64_t obj, char *buf);
 
 int dsl_dataset_check_quota(dsl_dataset_t *ds, boolean_t check_quota,
     uint64_t asize, uint64_t inflight, uint64_t *used,
