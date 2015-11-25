@@ -1797,7 +1797,9 @@ dsl_dataset_rename_snapshot_check_impl(dsl_dataset_t *hds, const char *unused,
 
 	error = dsl_dataset_snap_lookup(hds, ddrsa->ddrsa_oldsnapname, &val);
 	/* ignore nonexistent snapshots */
-	if (error != 0 || error != ENOENT) {
+	if (error != 0) {
+		if (error == ENOENT)
+			return (0);
 		dsl_dir_name(hds->ds_dir, ddrsa->ddrsa_fsname);
 		return (error);
 	}
