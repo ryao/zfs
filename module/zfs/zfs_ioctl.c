@@ -6102,6 +6102,9 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	uint64_t maxdepth = DS_FIND_MAX_DEPTH;
 	boolean_t name_specified = fsname != NULL && fsname[0] != '\0';
 	int error;
+#ifdef __linux__
+	const cred_t *cr;
+#endif
 
 	error = nvlist_lookup_int32(opts, "fd", &fd);
 	if (error != 0)
@@ -6199,26 +6202,49 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	dls->dls_fsname = (name_specified) ? spa_strdup(fsname) : NULL;
 
 	/*
-	 * XXX: Userland can block indefinitely if the number of streams
-	 * exceeds the number of taskq threads. On Linux, system_taskq is not a
-	 * dynamic taskq and the number of threads varies based on the number
-	 * of processors. On a uni-processor system, it is very easy to
-	 * deadlock userland, so we make a new thread to avoid that.
+	 * We make a new thread so that userspace can simply read from the file
+	 * descriptor without having to worry about threading. We enforce user
+	 * resource limits, so that system imposed resource limits are honored.
 	 */
 #ifdef __linux__
+	cr = prepare_kernel_cred(current);
+	if (!cr) {
+		error = SET_ERROR(ENOMEM);
+		goto rlimit_err;
+	}
+
+	cr = override_creds(cr);
+
+#ifndef ASSIGNED_PRIO
+#define ASSIGNED_PRIO(p) ((p)->prio - MAX_RT_PRIO)
+#endif
+
+	/* XXX: Fix priority */
 	(void) thread_create(NULL, 0, dump_list_strategy, dls, 0, &p0,
-	    TS_RUN, defclsyspri);
+	    TS_RUN, ASSIGNED_PRIO(curthread));
+
+	revert_creds(cr);
+
+	if (error) {
+		error = SET_ERROR(EAGAIN);
+		goto rlimit_err;
+	}
 #else
-	if (!taskq_dispatch(system_taskq, dump_list_strategy, dls, TQ_SLEEP)) {
-		if (dls->dls_fsname)
-			spa_strfree((char *)dls->dls_fsname);
-		kmem_free(dls, sizeof (dls_t));
-		releasef(fd);
-		return (SET_ERROR(ENOMEM));
+	if (lwp_create(dump_list_strategy, dls, 0, curproc, TS_RUN,
+	    ASSIGNED_PRIO(curthread), &t0.t_hold, curthread->t_cid, 0) == NULL) {
+		kmem_free(dls, sizeof (dls_t)) {
+		error = SET_ERROR(EAGAIN);
+		goto rlimit_err;
 	}
 #endif
 
 	return (error);
+
+rlimit_err:
+	kmem_free(dls, sizeof (dls_t));
+	releasef(fd);
+	return (SET_ERROR(error));
+
 }
 
 static int
