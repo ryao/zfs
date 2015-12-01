@@ -6611,7 +6611,7 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 				    mnvl);
 			}
 
-			error = vec->zvec_func(name, innvl, outnvl, opts,
+			zc->zc_real_err = error = vec->zvec_func(name, innvl, outnvl, opts,
 			    version);
 			if (error == 0 && vec->zvec_allow_log &&
 			    spa_open(zc->zc_name, &spa, FTAG) == 0) {

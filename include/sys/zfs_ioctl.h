@@ -322,7 +322,7 @@ typedef struct zfs_cmd {
 	uint64_t	zc_nvlist_dst;		/* really (char *) */
 	uint64_t	zc_nvlist_dst_size;
 	boolean_t	zc_nvlist_dst_filled;	/* put an nvlist in dst? */
-	int		zc_pad2;
+	uint64_t	zc_real_err;		/* true error is passed here */
 
 	/*
 	 * The following members are for legacy ioctls which haven't been

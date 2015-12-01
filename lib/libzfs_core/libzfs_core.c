@@ -165,6 +165,8 @@ lzc_ioctl_impl(zfs_ioc_t ioc, const char *name,
 		    zc.zc_nvlist_dst_size);
 	}
 
+	errno = zc.zc_real_err;
+
 out:
 	fnvlist_pack_free(packed, size);
 	free((void *)(uintptr_t)zc.zc_nvlist_dst);
