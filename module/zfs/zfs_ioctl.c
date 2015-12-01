@@ -6282,6 +6282,24 @@ zfs_stable_ioc_zpool_export(const char *poolname, nvlist_t *innvl,
 
 	return (zpool_export(poolname, force, hardforce));
 }
+
+static int
+zfs_stable_ioc_zpool_stats(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	nvlist_t *config;
+	int error;
+
+	error = spa_get_stats(poolname, &config, NULL, 0);
+
+	if (error == 0) {
+		fnvlist_merge(outnvl, config);
+		fnvlist_free(config);
+	}
+
+	return (error);
+}
+
 /*
  * ioctl table for stable interface.
  * Functions use zfs_/zpool_ prefixes to distinguish between their uses
@@ -6295,6 +6313,14 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
+},
+{	.zvec_name		= "zpool_stats",
+	.zvec_func		= zfs_stable_ioc_zpool_stats,
+	.zvec_secpolicy		= zfs_secpolicy_read,
+	.zvec_namecheck		= POOL_NAME,
+	.zvec_pool_check	= POOL_CHECK_NONE,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_FALSE,
 },
 {	.zvec_name		= "zfs_snapshot",
 	.zvec_func		= zfs_stable_ioc_zfs_snapshot,
