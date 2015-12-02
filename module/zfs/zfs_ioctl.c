@@ -1601,6 +1601,24 @@ zfs_ioc_pool_destroy(zfs_cmd_t *zc)
 }
 
 static int
+zfs_stable_ioc_zpool_tryimport(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	nvlist_t *config = NULL;
+
+	config = spa_tryimport(innvl);
+
+	if (config == NULL)
+		return (SET_ERROR(EINVAL));
+
+	fnvlist_merge(outnvl, config);
+	nvlist_free(config);
+
+	return (0);
+}
+
+
+static int
 zfs_stable_ioc_zpool_import(const char *poolname, nvlist_t *innvl,
     nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
 {
@@ -6361,6 +6379,14 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_NONE,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
+},
+{	.zvec_name		= "zpool_tryimport",
+	.zvec_func		= zfs_stable_ioc_zpool_tryimport,
+	.zvec_secpolicy		= zfs_secpolicy_config,
+	.zvec_namecheck		= NO_NAME,
+	.zvec_pool_check	= POOL_CHECK_NONE,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_FALSE,
 },
 {	.zvec_name		= "zpool_stats",
 	.zvec_func		= zfs_stable_ioc_zpool_stats,

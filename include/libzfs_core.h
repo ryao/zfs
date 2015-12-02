@@ -41,6 +41,7 @@ void libzfs_core_fini(void);
 int lzc_pool_export(const char *, nvlist_t *);
 int lzc_pool_import(const char *, nvlist_t *, nvlist_t *,
     nvlist_t **);
+int lzc_pool_tryimport(nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_pool_stats(const char *, nvlist_t *, nvlist_t **);
 
 int lzc_list(const char *, nvlist_t *);

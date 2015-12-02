@@ -210,6 +210,12 @@ lzc_pool_import(const char *pool, nvlist_t *config, nvlist_t *opts,
 }
 
 int
+lzc_pool_tryimport(nvlist_t *config, nvlist_t *opts, nvlist_t **newconfig)
+{
+	return(lzc_ioctl("zpool_tryimport", NULL, config, opts, newconfig, 0));
+}
+
+int
 lzc_pool_stats(const char *pool, nvlist_t *opts, nvlist_t **stats)
 {
 	return(lzc_ioctl("zpool_stats", pool, NULL, opts, stats, 0));
