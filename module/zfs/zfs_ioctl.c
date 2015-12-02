@@ -1601,6 +1601,46 @@ zfs_ioc_pool_destroy(zfs_cmd_t *zc)
 }
 
 static int
+zfs_stable_ioc_zpool_import(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	nvlist_t *config, *props = NULL;
+	uint64_t guid;
+	int flags = 0;
+	int error;
+
+	if (nvlist_lookup_nvlist(innvl, "config", &config) != 0)
+		return (SET_ERROR(EINVAL));
+
+	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID, &guid) != 0)
+		return (SET_ERROR(EINVAL));
+
+	(void) nvlist_lookup_nvlist(innvl, "props", &props);
+
+	if (nvlist_exists(opts, "verbatim"))
+		flags |= ZFS_IMPORT_VERBATIM;
+
+	if (nvlist_exists(opts, "any_host"))
+		flags |= ZFS_IMPORT_ANY_HOST;
+
+	if (nvlist_exists(opts, "missing_log"))
+		flags |= ZFS_IMPORT_MISSING_LOG;
+
+	if (nvlist_exists(opts, "only"))
+		flags |= ZFS_IMPORT_ONLY;
+
+	if (nvlist_exists(opts, "temp_name"))
+		flags |= ZFS_IMPORT_TEMP_NAME;
+
+	error = spa_import(poolname, config, props, flags);
+
+	fnvlist_merge(outnvl, config);
+	nvlist_free(config);
+
+	return (error);
+}
+
+static int
 zfs_ioc_pool_import(zfs_cmd_t *zc)
 {
 	nvlist_t *config, *props = NULL;
@@ -6311,6 +6351,14 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_secpolicy		= zfs_secpolicy_config,
 	.zvec_namecheck		= POOL_NAME,
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_TRUE,
+},
+{	.zvec_name		= "zpool_import",
+	.zvec_func		= zfs_stable_ioc_zpool_import,
+	.zvec_secpolicy		= zfs_secpolicy_config,
+	.zvec_namecheck		= POOL_NAME,
+	.zvec_pool_check	= POOL_CHECK_NONE,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
 },

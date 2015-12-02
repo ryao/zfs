@@ -1744,9 +1744,10 @@ int
 zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
     nvlist_t *props, int flags)
 {
-	zfs_cmd_t zc = {"\0"};
 	zpool_rewind_policy_t policy;
 	nvlist_t *nv = NULL;
+	nvlist_t *opts = NULL;
+	nvlist_t *newconfig = NULL;
 	nvlist_t *nvinfo = NULL;
 	nvlist_t *missing = NULL;
 	char *thename;
@@ -1781,38 +1782,42 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 		if ((props = zpool_valid_proplist(hdl, origname,
 		    props, version, flags, errbuf)) == NULL) {
 			return (-1);
-		} else if (zcmd_write_src_nvlist(hdl, &zc, props) != 0) {
-			nvlist_free(props);
-			return (-1);
 		}
 	}
 
-	(void) strlcpy(zc.zc_name, thename, sizeof (zc.zc_name));
+	nv = fnvlist_alloc();
 
-	verify(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID,
-	    &zc.zc_guid) == 0);
+	fnvlist_add_nvlist(nv, "config", config);
+	if (props)
+		fnvlist_add_nvlist(nv, "props", props);
 
-	if (zcmd_write_conf_nvlist(hdl, &zc, config) != 0) {
-		nvlist_free(props);
-		return (-1);
-	}
-	if (zcmd_alloc_dst_nvlist(hdl, &zc, zc.zc_nvlist_conf_size * 2) != 0) {
-		nvlist_free(props);
-		return (-1);
+	if (flags) {
+		opts = fnvlist_alloc();
+		if (flags & ZFS_IMPORT_VERBATIM)
+			fnvlist_add_boolean(opts, "verbatim");
+
+		if (flags & ZFS_IMPORT_ANY_HOST)
+			fnvlist_add_boolean(opts, "any_host");
+
+		if (flags & ZFS_IMPORT_MISSING_LOG)
+			fnvlist_add_boolean(opts, "missing_log");
+
+		if (flags & ZFS_IMPORT_ONLY)
+			fnvlist_add_boolean(opts, "only");
+
+		if (flags & ZFS_IMPORT_TEMP_NAME)
+			fnvlist_add_boolean(opts, "temp_name");
 	}
 
-	zc.zc_cookie = flags;
-	while ((ret = zfs_ioctl(hdl, ZFS_IOC_POOL_IMPORT, &zc)) != 0 &&
-	    errno == ENOMEM) {
-		if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
-			zcmd_free_nvlists(&zc);
-			return (-1);
-		}
-	}
+	ret = lzc_pool_import(thename, nv, opts, &newconfig);
+
 	if (ret != 0)
 		error = errno;
 
-	(void) zcmd_read_dst_nvlist(hdl, &zc, &nv);
+	fnvlist_free(nv);
+	if (opts)
+		fnvlist_free(opts);
+
 	zpool_get_rewind_policy(config, &policy);
 
 	if (error) {
@@ -1824,8 +1829,8 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 		 */
 		if (policy.zrp_request & ZPOOL_TRY_REWIND) {
 			zpool_rewind_exclaim(hdl, newname ? origname : thename,
-			    B_TRUE, nv);
-			nvlist_free(nv);
+			    B_TRUE, newconfig);
+			nvlist_free(newconfig);
 			return (-1);
 		}
 
@@ -1840,13 +1845,13 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 
 		switch (error) {
 		case ENOTSUP:
-			if (nv != NULL && nvlist_lookup_nvlist(nv,
+			if (newconfig != NULL && nvlist_lookup_nvlist(newconfig,
 			    ZPOOL_CONFIG_LOAD_INFO, &nvinfo) == 0 &&
 			    nvlist_exists(nvinfo, ZPOOL_CONFIG_UNSUP_FEAT)) {
 				(void) printf(dgettext(TEXT_DOMAIN, "This "
 				    "pool uses the following feature(s) not "
 				    "supported by this system:\n"));
-				zpool_print_unsup_feat(nv);
+				zpool_print_unsup_feat(newconfig);
 				if (nvlist_exists(nvinfo,
 				    ZPOOL_CONFIG_CAN_RDONLY)) {
 					(void) printf(dgettext(TEXT_DOMAIN,
@@ -1873,7 +1878,7 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 			break;
 
 		case ENXIO:
-			if (nv && nvlist_lookup_nvlist(nv,
+			if (newconfig && nvlist_lookup_nvlist(newconfig,
 			    ZPOOL_CONFIG_LOAD_INFO, &nvinfo) == 0 &&
 			    nvlist_lookup_nvlist(nvinfo,
 			    ZPOOL_CONFIG_MISSING_DEVICES, &missing) == 0) {
@@ -1899,11 +1904,11 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 		default:
 			(void) zpool_standard_error(hdl, error, desc);
 			zpool_explain_recover(hdl,
-			    newname ? origname : thename, -error, nv);
+			    newname ? origname : thename, -error, newconfig);
 			break;
 		}
 
-		nvlist_free(nv);
+		nvlist_free(newconfig);
 		ret = -1;
 	} else {
 		zpool_handle_t *zhp;
@@ -1918,13 +1923,12 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 		if (policy.zrp_request &
 		    (ZPOOL_DO_REWIND | ZPOOL_TRY_REWIND)) {
 			zpool_rewind_exclaim(hdl, newname ? origname : thename,
-			    ((policy.zrp_request & ZPOOL_TRY_REWIND) != 0), nv);
+			    ((policy.zrp_request & ZPOOL_TRY_REWIND) != 0), newconfig);
 		}
-		nvlist_free(nv);
+		nvlist_free(newconfig);
 		return (0);
 	}
 
-	zcmd_free_nvlists(&zc);
 	nvlist_free(props);
 
 	return (ret);
