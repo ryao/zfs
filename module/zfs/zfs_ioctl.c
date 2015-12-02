@@ -6328,6 +6328,22 @@ zfs_stable_ioc_zfs_exists(const char *fsname, nvlist_t *innvl,
 }
 
 static int
+zfs_stable_ioc_zpool_configs(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	nvlist_t *configs;
+	uint64_t gen;
+
+	if ((configs = spa_all_configs(&gen)) == NULL)
+		return (SET_ERROR(EEXIST));
+
+	fnvlist_merge(outnvl, configs);
+	fnvlist_free(configs);
+
+	return (0);
+}
+
+static int
 zfs_stable_ioc_zpool_export(const char *poolname, nvlist_t *innvl,
     nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
 {
@@ -6364,6 +6380,14 @@ zfs_stable_ioc_zpool_stats(const char *poolname, nvlist_t *innvl,
  * XXX: Sort entries and implement binary search.
  */
 static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
+{	.zvec_name		= "zpool_configs",
+	.zvec_func		= zfs_stable_ioc_zpool_configs,
+	.zvec_secpolicy		= zfs_secpolicy_none,
+	.zvec_namecheck		= NO_NAME,
+	.zvec_pool_check	= POOL_CHECK_NONE,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_FALSE,
+},
 {	.zvec_name		= "zpool_export",
 	.zvec_func		= zfs_stable_ioc_zpool_export,
 	.zvec_secpolicy		= zfs_secpolicy_config,

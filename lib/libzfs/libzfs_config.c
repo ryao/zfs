@@ -106,7 +106,6 @@ namespace_reload(libzfs_handle_t *hdl)
 	nvlist_t *config;
 	config_node_t *cn;
 	nvpair_t *elem;
-	zfs_cmd_t zc = {"\0"};
 	void *cookie;
 
 	if (hdl->libzfs_ns_gen == 0) {
@@ -126,45 +125,25 @@ namespace_reload(libzfs_handle_t *hdl)
 			return (no_memory(hdl));
 	}
 
-	if (zcmd_alloc_dst_nvlist(hdl, &zc, 0) != 0)
-		return (-1);
-
 	for (;;) {
-		zc.zc_cookie = hdl->libzfs_ns_gen;
-		if (ioctl(hdl->libzfs_fd, ZFS_IOC_POOL_CONFIGS, &zc) != 0) {
+		if (lzc_pool_configs(NULL, &config) != 0) {
 			switch (errno) {
 			case EEXIST:
 				/*
 				 * The namespace hasn't changed.
 				 */
-				zcmd_free_nvlists(&zc);
 				return (0);
 
-			case ENOMEM:
-				if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
-					zcmd_free_nvlists(&zc);
-					return (-1);
-				}
-				break;
-
 			default:
-				zcmd_free_nvlists(&zc);
 				return (zfs_standard_error(hdl, errno,
 				    dgettext(TEXT_DOMAIN, "failed to read "
 				    "pool configuration")));
 			}
 		} else {
-			hdl->libzfs_ns_gen = zc.zc_cookie;
+			hdl->libzfs_ns_gen++;
 			break;
 		}
 	}
-
-	if (zcmd_read_dst_nvlist(hdl, &zc, &config) != 0) {
-		zcmd_free_nvlists(&zc);
-		return (-1);
-	}
-
-	zcmd_free_nvlists(&zc);
 
 	/*
 	 * Clear out any existing configuration information.

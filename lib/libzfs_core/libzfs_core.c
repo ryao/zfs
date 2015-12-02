@@ -197,6 +197,12 @@ lzc_ioctl(const char *cmd, const char *name, nvlist_t *source,
 }
 
 int
+lzc_pool_configs(nvlist_t *opts, nvlist_t **configs)
+{
+	return(lzc_ioctl("zpool_configs", NULL, NULL, opts, configs, 0));
+}
+
+int
 lzc_pool_export(const char *pool, nvlist_t *opts)
 {
 	return(lzc_ioctl("zpool_export", pool, NULL, opts, NULL, 0));
