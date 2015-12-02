@@ -3151,33 +3151,62 @@ zfs_ioc_pool_set_props(zfs_cmd_t *zc)
 }
 
 static int
-zfs_ioc_pool_get_props(zfs_cmd_t *zc)
+zpool_getprops(const char *poolname, nvlist_t **nvp)
 {
 	spa_t *spa;
 	int error;
-	nvlist_t *nvp = NULL;
 
-	if ((error = spa_open(zc->zc_name, &spa, FTAG)) != 0) {
+	if ((error = spa_open(poolname, &spa, FTAG)) != 0) {
 		/*
 		 * If the pool is faulted, there may be properties we can still
 		 * get (such as altroot and cachefile), so attempt to get them
 		 * anyway.
 		 */
 		mutex_enter(&spa_namespace_lock);
-		if ((spa = spa_lookup(zc->zc_name)) != NULL)
-			error = spa_prop_get(spa, &nvp);
+		if ((spa = spa_lookup(poolname)) != NULL)
+			error = spa_prop_get(spa, nvp);
 		mutex_exit(&spa_namespace_lock);
 	} else {
-		error = spa_prop_get(spa, &nvp);
+		error = spa_prop_get(spa, nvp);
 		spa_close(spa, FTAG);
 	}
 
-	if (error == 0 && zc->zc_nvlist_dst != 0)
-		error = put_nvlist(zc, nvp);
-	else
-		error = SET_ERROR(EFAULT);
+	return (error);
+}
+
+static int
+zfs_stable_ioc_zpool_getprops(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	int error;
+	nvlist_t *nvp = NULL;
+
+	error = zpool_getprops(poolname, &nvp);
+
+	if (error == 0)
+		fnvlist_merge(outnvl, nvp);
 
 	nvlist_free(nvp);
+
+	return (error);
+}
+static int
+zfs_ioc_pool_get_props(zfs_cmd_t *zc)
+{
+	int error;
+	nvlist_t *nvp = NULL;
+
+	error = zpool_getprops(zc->zc_name, &nvp);
+
+	if (error == 0) {
+		if (zc->zc_nvlist_dst != 0)
+			error = put_nvlist(zc, nvp);
+		else
+			error = SET_ERROR(EFAULT);
+	}
+
+	nvlist_free(nvp);
+
 	return (error);
 }
 
@@ -6395,6 +6424,14 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
+},
+{	.zvec_name		= "zpool_getprops",
+	.zvec_func		= zfs_stable_ioc_zpool_getprops,
+	.zvec_secpolicy		= zfs_secpolicy_read,
+	.zvec_namecheck		= POOL_NAME,
+	.zvec_pool_check	= POOL_CHECK_NONE,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_FALSE,
 },
 {	.zvec_name		= "zpool_import",
 	.zvec_func		= zfs_stable_ioc_zpool_import,

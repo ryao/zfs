@@ -203,6 +203,12 @@ lzc_pool_configs(nvlist_t *opts, nvlist_t **configs)
 }
 
 int
+lzc_pool_getprops(const char *pool, nvlist_t *opts, nvlist_t **props)
+{
+	return(lzc_ioctl("zpool_getprops", pool, NULL, opts, props, 0));
+}
+
+int
 lzc_pool_export(const char *pool, nvlist_t *opts)
 {
 	return(lzc_ioctl("zpool_export", pool, NULL, opts, NULL, 0));

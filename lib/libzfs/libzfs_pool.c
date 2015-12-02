@@ -64,32 +64,8 @@ typedef struct prop_flags {
 static int
 zpool_get_all_props(zpool_handle_t *zhp)
 {
-	zfs_cmd_t zc = {"\0"};
-	libzfs_handle_t *hdl = zhp->zpool_hdl;
-
-	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
-
-	if (zcmd_alloc_dst_nvlist(hdl, &zc, 0) != 0)
+	if (lzc_pool_getprops(zhp->zpool_name, NULL, &zhp->zpool_props) != 0)
 		return (-1);
-
-	while (ioctl(hdl->libzfs_fd, ZFS_IOC_POOL_GET_PROPS, &zc) != 0) {
-		if (errno == ENOMEM) {
-			if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
-				zcmd_free_nvlists(&zc);
-				return (-1);
-			}
-		} else {
-			zcmd_free_nvlists(&zc);
-			return (-1);
-		}
-	}
-
-	if (zcmd_read_dst_nvlist(hdl, &zc, &zhp->zpool_props) != 0) {
-		zcmd_free_nvlists(&zc);
-		return (-1);
-	}
-
-	zcmd_free_nvlists(&zc);
 
 	return (0);
 }
