@@ -243,7 +243,7 @@ typedef struct dmu_buf_impl {
 	uint8_t db_freed_in_flight;
 
 	/*
-	 * dnode_evict_dbufs() or dnode_evict_bonsu() tried to
+	 * dnode_evict_dbufs() or dnode_evict_bonus() tried to
 	 * evict this dbuf, but couldn't due to outstanding
 	 * references.  Evict once the refcount drops to 0.
 	 */
