@@ -2410,7 +2410,6 @@ top:
 		if (error == ENOENT)
 			error = SET_ERROR(ESRCH);
 	} while (error == 0 && dataset_name_hidden(zl->zl_name));
-	dmu_objset_rele(os, FTAG);
 
 	/*
 	 * if it's an internal dataset (ie. with a '$' in its name),
@@ -2426,6 +2425,7 @@ top:
 			goto top;
 		}
 	}
+	dmu_objset_rele(os, FTAG);
 	return (error);
 }
 
@@ -6303,7 +6303,7 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	cr = override_creds(cr);
 
 #ifndef ASSIGNED_PRIO
-#define ASSIGNED_PRIO(p) ((p)->prio - MAX_RT_PRIO)
+#define	ASSIGNED_PRIO(p) ((p)->prio - MAX_RT_PRIO)
 #endif
 
 	/* XXX: Fix priority */
@@ -6318,7 +6318,8 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	}
 #else
 	if (lwp_create(dump_list_strategy, dls, 0, curproc, TS_RUN,
-	    ASSIGNED_PRIO(curthread), &t0.t_hold, curthread->t_cid, 0) == NULL) {
+	    ASSIGNED_PRIO(curthread), &t0.t_hold, curthread->t_cid, 0) ==
+	    NULL) {
 		kmem_free(dls, sizeof (dls_t)) {
 		error = SET_ERROR(EAGAIN);
 		goto rlimit_err;
@@ -6593,6 +6594,14 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_smush_outnvlist	= B_TRUE,
 	.zvec_allow_log		= B_TRUE,
 },
+{	.zvec_name		= "zfs_exists",
+	.zvec_func		= zfs_stable_ioc_zfs_exists,
+	.zvec_secpolicy		= zfs_secpolicy_read,
+	.zvec_namecheck		= DATASET_NAME,
+	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
+	.zvec_smush_outnvlist	= B_FALSE,
+	.zvec_allow_log		= B_FALSE,
+},
 {	.zvec_name		= "zfs_list",
 	.zvec_func		= zfs_stable_ioc_zfs_list,
 	.zvec_secpolicy		= zfs_secpolicy_read,
@@ -6624,14 +6633,6 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
-},
-{	.zvec_name		= "zfs_exists",
-	.zvec_func		= zfs_stable_ioc_zfs_exists,
-	.zvec_secpolicy		= zfs_secpolicy_read,
-	.zvec_namecheck		= DATASET_NAME,
-	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
-	.zvec_smush_outnvlist	= B_FALSE,
-	.zvec_allow_log		= B_FALSE,
 },
 };
 
@@ -6772,8 +6773,8 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 				    mnvl);
 			}
 
-			zc->zc_real_err = error = vec->zvec_func(name, innvl, outnvl, opts,
-			    version);
+			zc->zc_real_err = error = vec->zvec_func(name, innvl,
+			    outnvl, opts, version);
 			if (error == 0 && vec->zvec_allow_log &&
 			    spa_open(zc->zc_name, &spa, FTAG) == 0) {
 				if (!nvlist_empty(outnvl)) {

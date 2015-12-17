@@ -29,11 +29,14 @@
 #include <libnvpair.h>
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/fs/zfs.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+enum dmu_objset_type;
+
+typedef int (*lzc_iter_f)(nvlist_t *, void *);
 
 int libzfs_core_init(void);
 void libzfs_core_fini(void);
@@ -47,8 +50,9 @@ int lzc_pool_tryimport(nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_pool_stats(const char *, nvlist_t *, nvlist_t **);
 
 int lzc_list(const char *, nvlist_t *);
+int lzc_list_iter(const char *, nvlist_t *, lzc_iter_f, void *);
 int lzc_snapshot(nvlist_t *, nvlist_t *, nvlist_t **);
-int lzc_create(const char *, dmu_objset_type_t, nvlist_t *);
+int lzc_create(const char *, enum dmu_objset_type, nvlist_t *);
 int lzc_clone(const char *, const char *, nvlist_t *);
 int lzc_promote(const char *, nvlist_t *, nvlist_t **);
 int lzc_set_props(const char *, nvlist_t *, nvlist_t *, nvlist_t **);
@@ -74,9 +78,14 @@ enum lzc_send_flags {
 };
 
 int lzc_send(const char *, const char *, int, enum lzc_send_flags);
-int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
 int lzc_send_space(const char *, const char *, uint64_t *);
 int lzc_send_progress(const char *, int, uint64_t *);
+
+struct dmu_replay_record;
+
+int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
+int lzc_receive_with_header(const char *, nvlist_t *, const char *, boolean_t,
+    boolean_t, int, const struct dmu_replay_record *);
 
 boolean_t lzc_exists(const char *);
 

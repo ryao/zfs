@@ -264,7 +264,7 @@ zpool_refresh_stats(zpool_handle_t *zhp, boolean_t *missing)
 		}
 	}
 
-	VERIFY(nvlist_size(config, &zhp->zpool_config_size, NV_ENCODE_XDR) == 0);
+	VERIFY0(nvlist_size(config, &zhp->zpool_config_size, NV_ENCODE_XDR));
 
 	if (zhp->zpool_config != NULL) {
 		uint64_t oldtxg, newtxg;
