@@ -33,13 +33,13 @@ This manual page is part of the OpenZFS Programmer's Manual.
 \fBint\fR \fBlzc_send_space\fR(\fBconst char *\fR\fIsnapname\fR, \fBconst char *\fR\fIfrom\fR, \fBuint64_t *\fR\fIspacep\fR);
 
 .SH NAME
-lzc_send_space \- Calculates approximately how many bytes would be written by
-lzc_send().
+lzc_send_space\- Calculates approximately how many bytes would be written by
+lzc_send()/lzc_send_ext().
 
 .SH DESCRIPTION
 .LP
 The \fBlzc_send_space\fR() function calculates approximately how many bytes
-would be written by lzc_send().
+would be written by lzc_send()/lzc_send_ext().
 
 If \fIfrom\fR is NULL, the space for a non-incremental stream is calculated.
 Calculations for deduplicated streams are not supported.

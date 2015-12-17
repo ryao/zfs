@@ -439,13 +439,15 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 				zhp = zfs_open(g_zfs, argv[i],
 				    (flags & ZFS_ITER_RECURSE) ? 0 : argtype);
 			}
-			if (zhp != NULL)
-				ret |= zfs_iter_generic(zfs_get_handle(zhp),
+			if (zhp != NULL) {
+				ret = zfs_iter_generic(zfs_get_handle(zhp),
 				    zfs_get_name(zhp), argtype, 0,
 				    (limit_specified) ? limit : (flags &
 				    ZFS_ITER_RECURSE) ? -1 : 0,
-				    limit_specified, zfs_callback, &cb);
-			else
+				    !(flags & ZFS_ITER_RECURSE), zfs_callback,
+				    &cb);
+				zfs_close(zhp);
+			} else
 				ret = 1;
 		}
 	}
@@ -456,7 +458,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 	 */
 	for (node = uu_avl_first(cb.cb_avl); node != NULL;
 	    node = uu_avl_next(cb.cb_avl, node))
-		ret |= callback(node->zn_handle, data);
+		ret = callback(node->zn_handle, data);
 
 	/*
 	 * Finally, clean up the AVL tree.

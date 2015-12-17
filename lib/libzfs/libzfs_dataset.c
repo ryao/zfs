@@ -289,14 +289,20 @@ static int
 get_objset_stats_cb(zfs_handle_t *zhp, void *data)
 {
 	zfs_cmd_t *zc = data;
+	size_t size = zc->zc_nvlist_dst;
 	int err;
 
 	err = nvlist_pack(zhp->zfs_props, (char **) &zc->zc_nvlist_dst,
-	    &zc->zc_nvlist_dst_size, NV_ENCODE_NATIVE, 0);
+	    &size, NV_ENCODE_NATIVE, 0);
 
-	(void) strlcpy(zc->zc_name, zhp->zfs_name, sizeof (zc->zc_name));
+	if (err == 0) {
+		(void) strlcpy(zc->zc_name, zhp->zfs_name,
+		    sizeof (zc->zc_name));
+		zc->zc_nvlist_dst = size;
+		zc->zc_objset_stats = zhp->zfs_dmustats;
+	}
 
-	zc->zc_objset_stats = zhp->zfs_dmustats;
+	zfs_close(zhp);
 
 	return (err);
 }
@@ -307,9 +313,10 @@ get_objset_stats_cb(zfs_handle_t *zhp, void *data)
 static int
 get_stats_ioctl(zfs_handle_t *zhp, zfs_cmd_t *zc)
 {
-	if (zfs_iter_generic(zhp->zfs_hdl, zhp->zfs_name, 0, 0, 0, B_FALSE,
-	    &get_objset_stats_cb, zc) != 0)
+	if ((errno = zfs_iter_generic(zhp->zfs_hdl, zhp->zfs_name, 0, 0, 0,
+	    B_TRUE, &get_objset_stats_cb, zc)) != 0) {
 		return (-1);
+	}
 
 	return (0);
 }
@@ -1594,6 +1601,7 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 		goto error;
 
 	/*
+	 * Execute the corresponding ioctl() to set this property.
 	 * Call libzfs_core to set this property.
 	 */
 	ret = lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
@@ -2003,6 +2011,8 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		if (zcmd_read_dst_nvlist(zhp->zfs_hdl, &zc, &zplprops) != 0 ||
 		    nvlist_lookup_uint64(zplprops, zfs_prop_to_name(prop),
 		    val) != 0) {
+			if (zplprops)
+				nvlist_free(zplprops);
 			zcmd_free_nvlists(&zc);
 			return (-1);
 		}

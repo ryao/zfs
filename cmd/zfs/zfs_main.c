@@ -518,7 +518,7 @@ parse_depth(char *opt, int *flags)
 		    gettext("Depth can not be negative.\n"));
 		usage(B_FALSE);
 	}
-	*flags |= (ZFS_ITER_DEPTH_LIMIT|ZFS_ITER_RECURSE);
+	*flags |= (ZFS_ITER_DEPTH_LIMIT);
 	return (depth);
 }
 
@@ -3155,6 +3155,9 @@ zfs_do_list(int argc, char **argv)
 		usage(B_FALSE);
 
 	cb.cb_first = B_TRUE;
+
+	if (argc > 0 && (flags & ZFS_ITER_RECURSE) == 0)
+		flags |= ZFS_ITER_DEPTH_LIMIT;
 
 	ret = zfs_for_each(argc, argv, flags, types, sortcol, &cb.cb_proplist,
 	    limit, list_callback, &cb);

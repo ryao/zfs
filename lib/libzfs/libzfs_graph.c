@@ -393,7 +393,8 @@ parentof(const char *dataset)
 	return (p);
 }
 
-int iterate_children_cb(zfs_handle_t *zhp, void *data)
+int
+iterate_children_cb(zfs_handle_t *zhp, void *data)
 {
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	const char *dataset = zhp->zfs_name;
@@ -471,8 +472,10 @@ get_objset_stats_cb(zfs_handle_t *zhp, void *data)
 	return (0);
 
 }
+
 int
-get_objset_stats(libzfs_handle_t *hdl, const char *dataset, dmu_objset_stats_t *stats)
+get_objset_stats(libzfs_handle_t *hdl, const char *dataset,
+    dmu_objset_stats_t *stats)
 {
 	if (zfs_iter_generic(hdl, dataset, 0, 0, 0, B_FALSE,
 	    &get_objset_stats_cb, stats) != 0)

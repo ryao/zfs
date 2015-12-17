@@ -199,38 +199,38 @@ lzc_ioctl(const char *cmd, const char *name, nvlist_t *source,
 int
 lzc_pool_configs(nvlist_t *opts, nvlist_t **configs)
 {
-	return(lzc_ioctl("zpool_configs", NULL, NULL, opts, configs, 0));
+	return (lzc_ioctl("zpool_configs", NULL, NULL, opts, configs, 0));
 }
 
 int
 lzc_pool_getprops(const char *pool, nvlist_t *opts, nvlist_t **props)
 {
-	return(lzc_ioctl("zpool_getprops", pool, NULL, opts, props, 0));
+	return (lzc_ioctl("zpool_getprops", pool, NULL, opts, props, 0));
 }
 
 int
 lzc_pool_export(const char *pool, nvlist_t *opts)
 {
-	return(lzc_ioctl("zpool_export", pool, NULL, opts, NULL, 0));
+	return (lzc_ioctl("zpool_export", pool, NULL, opts, NULL, 0));
 }
 
 int
 lzc_pool_import(const char *pool, nvlist_t *config, nvlist_t *opts,
     nvlist_t **newconfig)
 {
-	return(lzc_ioctl("zpool_import", pool, config, opts, newconfig, 0));
+	return (lzc_ioctl("zpool_import", pool, config, opts, newconfig, 0));
 }
 
 int
 lzc_pool_tryimport(nvlist_t *config, nvlist_t *opts, nvlist_t **newconfig)
 {
-	return(lzc_ioctl("zpool_tryimport", NULL, config, opts, newconfig, 0));
+	return (lzc_ioctl("zpool_tryimport", NULL, config, opts, newconfig, 0));
 }
 
 int
 lzc_pool_stats(const char *pool, nvlist_t *opts, nvlist_t **stats)
 {
-	return(lzc_ioctl("zpool_stats", pool, NULL, opts, stats, 0));
+	return (lzc_ioctl("zpool_stats", pool, NULL, opts, stats, 0));
 }
 
 int
@@ -630,22 +630,9 @@ recv_read(int fd, void *buf, int ilen)
 	return (0);
 }
 
-/*
- * The simplest receive case: receive from the specified fd, creating the
- * specified snapshot.  Apply the specified properties a "received" properties
- * (which can be overridden by locally-set properties).  If the stream is a
- * clone, its origin snapshot must be specified by 'origin'.  The 'force'
- * flag will cause the target filesystem to be rolled back or destroyed if
- * necessary to receive.
- *
- * Return 0 on success or an errno on failure.
- *
- * Note: this interface does not work on dedup'd streams
- * (those with DMU_BACKUP_FEATURE_DEDUP).
- */
-int
-lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
-    boolean_t force, int fd)
+static int
+recv_impl(const char *snapname, nvlist_t *props, const char *origin,
+    boolean_t force, int fd, const dmu_replay_record_t *begin_record)
 {
 	/*
 	 * The receive ioctl is still legacy, so we need to construct our own
@@ -687,10 +674,14 @@ lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
 		(void) strlcpy(zc.zc_string, origin, sizeof (zc.zc_string));
 
 	/* zc_begin_record is non-byteswapped BEGIN record */
-	error = recv_read(fd, &drr, sizeof (drr));
-	if (error != 0)
-		goto out;
-	zc.zc_begin_record = drr.drr_u.drr_begin;
+	if (begin_record == NULL) {
+		error = recv_read(fd, &drr, sizeof (drr));
+		if (error != 0)
+			goto out;
+		zc.zc_begin_record = drr.drr_u.drr_begin;
+	} else {
+		zc.zc_begin_record = begin_record->drr_u.drr_begin;
+	}
 
 	/* zc_value is full name of the snapshot to create */
 	(void) strlcpy(zc.zc_value, snapname, sizeof (zc.zc_value));
@@ -724,6 +715,44 @@ out:
 		fnvlist_pack_free(packed, size);
 	free((void*)(uintptr_t)zc.zc_nvlist_dst);
 	return (error);
+}
+
+/*
+ * The simplest receive case: receive from the specified fd, creating the
+ * specified snapshot.  Apply the specified properties as "received" properties
+ * (which can be overridden by locally-set properties).  If the stream is a
+ * clone, its origin snapshot must be specified by 'origin'.  The 'force'
+ * flag will cause the target filesystem to be rolled back or destroyed if
+ * necessary to receive.
+ *
+ * Return 0 on success or an errno on failure.
+ *
+ * Note: this interface does not work on dedup'd streams
+ * (those with DMU_BACKUP_FEATURE_DEDUP).
+ */
+int
+lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
+    boolean_t force, int fd)
+{
+	return (recv_impl(snapname, props, origin, force, fd, NULL));
+}
+
+/*
+ * Like lzc_receive, but allows the caller to read the begin record and then to
+ * pass it in.  That could be useful if the caller wants to derive, for example,
+ * the snapname or the origin parameters based on the information contained in
+ * the begin record.
+ * The begin record must be in its original form as read from the stream,
+ * in other words, it should not be byteswapped.
+ */
+int
+lzc_receive_with_header(const char *snapname, nvlist_t *props,
+    const char *origin, boolean_t force, boolean_t resumable, int fd,
+    const dmu_replay_record_t *begin_record)
+{
+	if (begin_record == NULL)
+		return (EINVAL);
+	return (recv_impl(snapname, props, origin, force, fd, begin_record));
 }
 
 /*
@@ -1080,5 +1109,91 @@ lzc_list(const char *name, nvlist_t *opts)
 
 	error = lzc_ioctl("zfs_list", name, innvl, opts, NULL, 0);
 
+	fnvlist_free(innvl);
+
 	return (error);
+}
+
+/*
+ * Helper function to iterate over all filesystems.
+ * Excluding the "fd" option, the same options that are passed to lzc_list must
+ * be passed to this.
+ */
+int
+lzc_list_iter(const char *name, nvlist_t *opts, lzc_iter_f func, void *data)
+{
+	zfs_pipe_record_t zpr;
+	int fildes[2];
+	int ret;
+	int buf_len = 0;
+	char *buf = NULL;
+
+	ret = pipe(fildes);
+	if (ret == -1)
+		return (errno);
+
+	ret = nvlist_add_int32(opts, "fd", fildes[1]);
+
+	if (ret != 0)
+		goto out;
+
+	if ((ret = lzc_list(name, opts)) != 0)
+		return (ret);
+
+	while ((ret = read(fildes[0], &zpr,
+	    sizeof (zfs_pipe_record_t))) == sizeof (uint64_t)) {
+		nvlist_t *nvl;
+#ifdef  _LITTLE_ENDIAN
+		uint32_t size = (zpr.zpr_endian) ? zpr.zpr_data_size :
+		    BSWAP_32(zpr.zpr_data_size);
+#else
+		uint32_t size = (zpr.zpr_endian) ? BSWAP_32(zpr.zpr_data_size) :
+		    zpr.zpr_data_size;
+#endif
+		if (zpr.zpr_data_size == 0) {
+			ret = 0;
+			break;
+		}
+
+		if (zpr.zpr_err != 0) {
+			ret = zpr.zpr_err;
+			break;
+		}
+
+		if (size > buf_len) {
+			if (buf)
+				umem_free(buf, size);
+			buf = umem_alloc(size, UMEM_NOFAIL);
+			buf_len = size;
+		}
+
+		ret = read(fildes[0], buf, size);
+		if (ret == -1)
+			break;
+
+		if (size != ret)
+			ret = EINVAL;
+
+		if ((ret = nvlist_unpack(buf +
+		    zpr.zpr_header_size, size, &nvl, 0)) != 0)
+		    break;
+
+		ret = func(nvl, data);
+
+		fnvlist_free(nvl);
+
+		if (ret != 0)
+			break;
+	}
+
+	if (ret == -1)
+		ret = errno;
+
+	if (buf)
+		umem_free(buf, buf_len);
+
+out:
+	close(fildes[0]);
+	close(fildes[1]);
+	return (ret);
 }
