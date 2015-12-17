@@ -322,7 +322,7 @@ typedef struct zfs_cmd {
 	uint64_t	zc_nvlist_dst;		/* really (char *) */
 	uint64_t	zc_nvlist_dst_size;
 	boolean_t	zc_nvlist_dst_filled;	/* put an nvlist in dst? */
-	uint64_t	zc_real_err;		/* true error is passed here */
+	int32_t		zc_real_err;		/* true error is passed here */
 
 	/*
 	 * The following members are for legacy ioctls which haven't been
@@ -359,7 +359,7 @@ typedef struct zfs_cmd {
 
 typedef struct zfs_pipe_record {
 	uint32_t	zpr_data_size;	/* Payload size */
-	uint8_t		zpr_header_size;/* Extension space after 8 bytes */
+	uint8_t		zpr_header_size; /* Extension space after 8 bytes */
 	uint8_t		zpr_err;	/* Return code */
 	uint8_t		zpr_endian;	/* Endian bit: 0 is BE, 1 is LE */
 	uint8_t		zpr_reserved;	/* Reserved space */

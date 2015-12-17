@@ -1744,7 +1744,7 @@ dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 	 * Iterate over all bookmarks.
 	 */
 	if (dcp->dc_maxdepth && dcp->dc_mindepth < 2 &&
-	     dcp->dc_flags & DS_FIND_BOOKMARKS) {
+	    dcp->dc_flags & DS_FIND_BOOKMARKS) {
 		err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 
 		if (err == 0) {

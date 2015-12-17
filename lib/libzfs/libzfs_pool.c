@@ -1898,7 +1898,8 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 		if (policy.zrp_request &
 		    (ZPOOL_DO_REWIND | ZPOOL_TRY_REWIND)) {
 			zpool_rewind_exclaim(hdl, newname ? origname : thename,
-			    ((policy.zrp_request & ZPOOL_TRY_REWIND) != 0), newconfig);
+			    ((policy.zrp_request & ZPOOL_TRY_REWIND) != 0),
+			    newconfig);
 		}
 		nvlist_free(newconfig);
 		return (0);
