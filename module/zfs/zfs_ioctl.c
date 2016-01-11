@@ -6034,6 +6034,11 @@ dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 		    DLS_TRAVERSE_SNAPSHOT)) &&
 		    !(dls->dls_flags & DLS_TRAVERSE_FILESYSTEM))
 			goto out2;
+		if ((err = nvl_add_zplprop(osp, nvl, ZFS_PROP_VERSION)) ||
+		    (err = nvl_add_zplprop(osp, nvl, ZFS_PROP_NORMALIZE)) ||
+		    (err = nvl_add_zplprop(osp, nvl, ZFS_PROP_UTF8ONLY)) ||
+		    (err = nvl_add_zplprop(osp, nvl, ZFS_PROP_CASE)))
+			goto out2;
 		break;
 	case DMU_OST_ZVOL:
 		if (!(issnap && (dls->dls_flags &&
