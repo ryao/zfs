@@ -6110,9 +6110,7 @@ dump_list_strategy_impl(dls_t *dls)
 	if (dls->dls_fsname) {
 		dsl_dir_t *dd;
 		int dmu_flags = DS_FIND_SERIALIZE;
-		char *dname;
-		char *c;
-
+		const char *lastp;
 
 		if (dls->dls_flags & DLS_RECURSE)
 			dmu_flags |= DS_FIND_CHILDREN;
@@ -6121,19 +6119,58 @@ dump_list_strategy_impl(dls_t *dls)
 		if (error != 0)
 			return (error);
 
-		dname = strdup(dls->dls_fsname);
-		if ((c = strpbrk(dname, "@#")))
-			c[0] = '\0';
-		error = dsl_dir_hold(dp, dname, FTAG, &dd, NULL);
-		strcpy(dname, dls->dls_fsname);
-		strfree(dname);
+		error = dsl_dir_hold(dp, dls->dls_fsname, FTAG, &dd, &lastp);
+
 		if (error != 0) {
 			dsl_pool_rele(dp, FTAG);
 			return (error);
 		}
-		error = dump_list_strategy_one(dp, dd->dd_object,
-		    dmu_flags, dls);
 
+		/* shortcut for snapshot/bookmark */
+		if (lastp != NULL && (lastp[0] == '@' || lastp[0] == '#')) {
+			dsl_dataset_t *ds;
+			const char *shortname = lastp + 1;
+			uint64_t obj = dsl_dir_phys(dd)->dd_head_dataset_obj;
+
+			if (obj == 0) {
+				error = SET_ERROR(ENOENT);
+				goto out;
+			}
+
+			error = dsl_dataset_hold_obj(dp, obj, FTAG, &ds);
+			if (error != 0)
+				goto out;
+
+			switch (lastp[0]) {
+			case '@':
+				error = dsl_dataset_snap_lookup(ds, shortname,
+				    &obj);
+				dsl_dataset_rele(ds, FTAG);
+				if (error != 0)
+					goto out;
+
+				error = dsl_dataset_hold_obj(dp, obj, FTAG,
+				    &ds);
+				if (error != 0)
+					goto out;
+				error = dump_ds(ds, NULL, dls);
+				break;
+			case '#':
+				error = dump_ds(ds, shortname, dls);
+				break;
+			default:
+				VERIFY(0);
+				break;
+			}
+
+
+			dsl_dataset_rele(ds, FTAG);
+		} else {
+			error = dump_list_strategy_one(dp, dd->dd_object,
+			    dmu_flags, dls);
+		}
+
+out:
 		dsl_dir_rele(dd, FTAG);
 		dsl_pool_rele(dp, FTAG);
 
