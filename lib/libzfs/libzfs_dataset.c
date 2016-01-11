@@ -289,16 +289,17 @@ static int
 get_objset_stats_cb(zfs_handle_t *zhp, void *data)
 {
 	zfs_cmd_t *zc = data;
-	size_t size = zc->zc_nvlist_dst;
+	size_t size = zc->zc_nvlist_dst_size;
+	char **buf = (void *)(uintptr_t) &zc->zc_nvlist_dst;
 	int err;
 
-	err = nvlist_pack(zhp->zfs_props, (char **) &zc->zc_nvlist_dst,
-	    &size, NV_ENCODE_NATIVE, 0);
+	err = nvlist_pack(zhp->zfs_props, buf, &size, NV_ENCODE_NATIVE, 0);
 
 	if (err == 0) {
 		(void) strlcpy(zc->zc_name, zhp->zfs_name,
 		    sizeof (zc->zc_name));
-		zc->zc_nvlist_dst = size;
+		zc->zc_nvlist_dst_size = size;
+		zc->zc_nvlist_dst_filled = B_TRUE;
 		zc->zc_objset_stats = zhp->zfs_dmustats;
 	}
 
@@ -1855,8 +1856,6 @@ static int
 get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
     char **source, uint64_t *val)
 {
-	zfs_cmd_t zc = {"\0"};
-	nvlist_t *zplprops = NULL;
 	struct mnttab mnt;
 	char *mntopt_on = NULL;
 	char *mntopt_off = NULL;
@@ -1998,27 +1997,16 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 	case ZFS_PROP_NORMALIZE:
 	case ZFS_PROP_UTF8ONLY:
 	case ZFS_PROP_CASE:
-		if (zcmd_alloc_dst_nvlist(zhp->zfs_hdl, &zc, 0) != 0)
-			return (-1);
-		(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-		if (get_stats_ioctl(zhp, &zc)) {
-			zcmd_free_nvlists(&zc);
+		if (get_stats(zhp)) {
 			if (prop == ZFS_PROP_VERSION &&
 			    zhp->zfs_type == ZFS_TYPE_VOLUME)
 				*val = zfs_prop_default_numeric(prop);
 			return (-1);
 		}
-		if (zcmd_read_dst_nvlist(zhp->zfs_hdl, &zc, &zplprops) != 0 ||
-		    nvlist_lookup_uint64(zplprops, zfs_prop_to_name(prop),
-		    val) != 0) {
-			if (zplprops)
-				nvlist_free(zplprops);
-			zcmd_free_nvlists(&zc);
+		if (nvlist_lookup_uint64(zhp->zfs_props,
+		    zfs_prop_to_name(prop), val) != 0) {
 			return (-1);
 		}
-		if (zplprops)
-			nvlist_free(zplprops);
-		zcmd_free_nvlists(&zc);
 		break;
 
 	case ZFS_PROP_INCONSISTENT:
