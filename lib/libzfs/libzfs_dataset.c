@@ -314,8 +314,8 @@ get_objset_stats_cb(zfs_handle_t *zhp, void *data)
 static int
 get_stats_ioctl(zfs_handle_t *zhp, zfs_cmd_t *zc)
 {
-	if ((errno = zfs_iter_generic(zhp->zfs_hdl, zhp->zfs_name, 0, 0, 0,
-	    B_TRUE, &get_objset_stats_cb, zc)) != 0) {
+	if ((errno = zfs_iter_generic(zhp->zfs_hdl, zhp->zfs_name,
+	    ZFS_TYPE_DATASET, 0, 0, B_TRUE, &get_objset_stats_cb, zc)) != 0) {
 		return (-1);
 	}
 
