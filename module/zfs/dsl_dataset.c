@@ -553,7 +553,7 @@ dsl_dataset_hold(dsl_pool_t *dp, const char *name,
 		err = SET_ERROR(ENOENT);
 
 	/* we may be looking for a snapshot */
-	if (err == 0 && snapname != NULL) {
+	if (err == 0 && snapname != NULL && snapname[0] != '#') {
 		dsl_dataset_t *ds;
 
 		if (*snapname++ != '@') {
