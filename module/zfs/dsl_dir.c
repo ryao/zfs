@@ -356,19 +356,19 @@ getcomponent(const char *path, char *component, const char **nextp)
 	if ((path == NULL) || (path[0] == '\0'))
 		return (SET_ERROR(ENOENT));
 	/* This would be a good place to reserve some namespace... */
-	p = strpbrk(path, "/@");
-	if (p && (p[1] == '/' || p[1] == '@')) {
+	p = strpbrk(path, "/@#");
+	if (p && (p[1] == '/' || p[1] == '@' || p[1] == '#')) {
 		/* two separators in a row */
 		return (SET_ERROR(EINVAL));
 	}
 	if (p == NULL || p == path) {
 		/*
-		 * if the first thing is an @ or /, it had better be an
-		 * @ and it had better not have any more ats or slashes,
-		 * and it had better have something after the @.
+		 * if the first thing is an #, @ or /, it had better be an
+		 * # or @ and it had better not have any more ats or slashes,
+		 * and it had better have something after the @ or #.
 		 */
 		if (p != NULL &&
-		    (p[0] != '@' || strpbrk(path+1, "/@") || p[1] == '\0'))
+		    (p[0] == '/' || strpbrk(path+1, "/@#") || p[1] == '\0'))
 			return (SET_ERROR(EINVAL));
 		if (strlen(path) >= MAXNAMELEN)
 			return (SET_ERROR(ENAMETOOLONG));
@@ -380,10 +380,10 @@ getcomponent(const char *path, char *component, const char **nextp)
 		(void) strncpy(component, path, p - path);
 		component[p - path] = '\0';
 		p++;
-	} else if (p[0] == '@') {
+	} else if (p[0] == '@' || p[0] == '#') {
 		/*
-		 * if the next separator is an @, there better not be
-		 * any more slashes.
+		 * if the next separator is an @ or #, there better not be any
+		 * more slashes.
 		 */
 		if (strchr(path, '/'))
 			return (SET_ERROR(EINVAL));
@@ -440,7 +440,7 @@ dsl_dir_hold(dsl_pool_t *dp, const char *name, void *tag,
 		if (err != 0)
 			break;
 		ASSERT(next[0] != '\0');
-		if (next[0] == '@')
+		if (next[0] == '@' || next[0] == '#')
 			break;
 		dprintf("looking up %s in obj%lld\n",
 		    buf, dsl_dir_phys(dd)->dd_child_dir_zapobj);
