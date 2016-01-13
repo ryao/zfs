@@ -6777,7 +6777,7 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 
 	/* We do not support sequence numbers above 0 right now */
 	if (version != 0)
-		return (EINVAL);
+		return (SET_ERROR(EINVAL));
 	/*
 	 * Ensure that all pool/dataset names are valid before we pass down to
 	 * the lower layers.
