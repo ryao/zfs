@@ -68,61 +68,37 @@ typedef struct callback_data {
 
 uu_avl_pool_t *avl_pool;
 
-/*
- * Include snaps if they were requested or if this a zfs list where types
- * were not specified and the "listsnapshots" property is set on this pool.
- */
-static boolean_t
-zfs_include_snapshots(zfs_handle_t *zhp, callback_data_t *cb)
-{
-	zpool_handle_t *zph;
-
-	if ((cb->cb_flags & ZFS_ITER_PROP_LISTSNAPS) == 0)
-		return (cb->cb_types & ZFS_TYPE_SNAPSHOT);
-
-	zph = zfs_get_pool_handle(zhp);
-	return (zpool_get_prop_int(zph, ZPOOL_PROP_LISTSNAPS, NULL));
-}
-
-/*
- * Called for each dataset.  If the object is of an appropriate type,
- * add it to the avl tree and recurse over any children as necessary.
- */
+/* Called for each dataset. */
 static int
 zfs_callback(zfs_handle_t *zhp, void *data)
 {
 	callback_data_t *cb = data;
 	boolean_t dontclose = B_FALSE;
-	boolean_t include_snaps = zfs_include_snapshots(zhp, cb);
+	uu_avl_index_t idx;
+	zfs_node_t *node = safe_malloc(sizeof (zfs_node_t));
 
-	if ((zfs_get_type(zhp) & cb->cb_types) ||
-	    ((zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT) && include_snaps)) {
-		uu_avl_index_t idx;
-		zfs_node_t *node = safe_malloc(sizeof (zfs_node_t));
+	node->zn_handle = zhp;
+	uu_avl_node_init(node, &node->zn_avlnode, avl_pool);
+	if (uu_avl_find(cb->cb_avl, node, cb->cb_sortcol,
+	    &idx) == NULL) {
+		if (cb->cb_proplist) {
+			if ((*cb->cb_proplist) &&
+			    !(*cb->cb_proplist)->pl_all)
+				zfs_prune_proplist(zhp,
+				    cb->cb_props_table);
 
-		node->zn_handle = zhp;
-		uu_avl_node_init(node, &node->zn_avlnode, avl_pool);
-		if (uu_avl_find(cb->cb_avl, node, cb->cb_sortcol,
-		    &idx) == NULL) {
-			if (cb->cb_proplist) {
-				if ((*cb->cb_proplist) &&
-				    !(*cb->cb_proplist)->pl_all)
-					zfs_prune_proplist(zhp,
-					    cb->cb_props_table);
-
-				if (zfs_expand_proplist(zhp, cb->cb_proplist,
-				    (cb->cb_flags & ZFS_ITER_RECVD_PROPS),
-				    (cb->cb_flags & ZFS_ITER_LITERAL_PROPS))
-				    != 0) {
-					free(node);
-					return (-1);
-				}
+			if (zfs_expand_proplist(zhp, cb->cb_proplist,
+			    (cb->cb_flags & ZFS_ITER_RECVD_PROPS),
+			    (cb->cb_flags & ZFS_ITER_LITERAL_PROPS))
+			    != 0) {
+				free(node);
+				return (-1);
 			}
-			uu_avl_insert(cb->cb_avl, node, idx);
-			dontclose = B_TRUE;
-		} else {
-			free(node);
 		}
+		uu_avl_insert(cb->cb_avl, node, idx);
+		dontclose = B_TRUE;
+	} else {
+		free(node);
 	}
 
 	if (!dontclose)
@@ -432,6 +408,17 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 		zfs_handle_t *zhp;
 
 		for (i = 0; i < argc; i++) {
+			/*
+			 * Special case for bookmarks
+			 */
+			if (argv[i][0] != '/' &&
+			    strncmp(argv[i], "./", strlen("./")) != 0 &&
+			    strchr(argv[i], '#') != NULL) {
+				ret = zfs_iter_generic(g_zfs, argv[i], argtype,
+				    0, 0, B_FALSE, zfs_callback, &cb);
+				continue;
+			}
+
 			if (flags & ZFS_ITER_ARGS_CAN_BE_PATHS) {
 				zhp = zfs_path_to_zhandle(g_zfs, argv[i],
 				    (flags & ZFS_ITER_RECURSE) ? 0 : argtype);
