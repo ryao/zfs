@@ -212,9 +212,7 @@ typedef int zfs_secpolicy_func_t(zfs_cmd_t *, nvlist_t *, nvlist_t *, cred_t *);
 typedef enum {
 	NO_NAME,
 	POOL_NAME,
-	POOL_NAME_OR_EMPTY,
 	DATASET_NAME,
-	DATASET_NAME_OR_EMPTY,
 } zfs_ioc_namecheck_t;
 
 typedef enum {
@@ -6229,11 +6227,33 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	dls_flag_t dls_flags = 0;
 	uint64_t mindepth = 0;
 	uint64_t maxdepth = DS_FIND_MAX_DEPTH;
-	boolean_t name_specified = fsname != NULL && fsname[0] != '\0';
+	boolean_t name_specified = fsname[0] != '\0';
+	boolean_t bmark = B_FALSE;
 	int error;
 #ifdef __linux__
 	const cred_t *cr;
 #endif
+
+	/* Handle the special cases of bookmark names and no names. */
+	if (name_specified) {
+		char *c = strchr(fsname, '#');
+
+		if (c != NULL) {
+			char *dsname;
+			bmark = TRUE;
+
+			if (c[1] == '\0' || strpbrk(c + 1, "@%#/") != NULL)
+				return (SET_ERROR(EINVAL));
+
+			dsname = kmem_asprintf("%.*s", c - fsname, fsname);
+			error = dataset_namecheck(dsname, NULL, NULL);
+			strfree(dsname);
+		} else
+			error = dataset_namecheck(fsname, NULL, NULL);
+
+		if (error)
+			return (SET_ERROR(EINVAL));
+	}
 
 	error = nvlist_lookup_int32(opts, "fd", &fd);
 	if (error != 0)
@@ -6647,7 +6667,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 {	.zvec_name		= "zfs_list",
 	.zvec_func		= zfs_stable_ioc_zfs_list,
 	.zvec_secpolicy		= zfs_secpolicy_read,
-	.zvec_namecheck		= DATASET_NAME_OR_EMPTY,
+	.zvec_namecheck		= NO_NAME,
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
 	.zvec_smush_outnvlist	= B_FALSE,
 	.zvec_allow_log		= B_TRUE,
@@ -6688,9 +6708,6 @@ zfs_namecheck(const char *name, zfs_ioc_namecheck_t namecheck,
 	int error = 0;
 
 	switch (namecheck) {
-	case POOL_NAME_OR_EMPTY:
-		if (name[0] == '\0')
-			break;
 	case POOL_NAME:
 		if (pool_namecheck(name, NULL, NULL) != 0)
 			error = SET_ERROR(EINVAL);
@@ -6699,9 +6716,6 @@ zfs_namecheck(const char *name, zfs_ioc_namecheck_t namecheck,
 			    POOL_NAME, pool_check);
 		break;
 
-	case DATASET_NAME_OR_EMPTY:
-		if (name[0] == '\0')
-			break;
 	case DATASET_NAME:
 		if (name[0] == '\0')
 			break;
