@@ -2170,7 +2170,7 @@ zfs_ioc_vdev_setfru(zfs_cmd_t *zc)
  * The caller frees the nvlist on success.
  */
 static int
-zfs_ioc_objset_stats_impl_nohold(nvlist_t **nv, dmu_objset_stats_t *stat,
+zfs_ioc_objset_stats_impl(nvlist_t **nv, dmu_objset_stats_t *stat,
     objset_t *os, boolean_t str_indices)
 {
 	int error = 0;
@@ -2202,25 +2202,6 @@ zfs_ioc_objset_stats_impl_nohold(nvlist_t **nv, dmu_objset_stats_t *stat,
 	return (error);
 }
 
-static int
-zfs_ioc_objset_stats_impl(nvlist_t **nvp, dmu_objset_stats_t *stat,
-    char *fsname, boolean_t str_indices)
-{
-	objset_t *os;
-	int error;
-
-	error = dmu_objset_hold(fsname, FTAG, &os);
-	if (error == 0) {
-		error = zfs_ioc_objset_stats_impl_nohold(nvp, stat,
-		    os, str_indices);
-
-		dmu_objset_rele(os, FTAG);
-	}
-
-
-	return (error);
-}
-
 /*
  * inputs:
  * zc_name		name of filesystem
@@ -2236,10 +2217,16 @@ zfs_ioc_objset_stats(zfs_cmd_t *zc)
 {
 	nvlist_t *nv = NULL;
 	nvlist_t **nvp = (zc->zc_nvlist_dst) ? &nv : NULL;
+	objset_t *os;
 	int error;
 
-	error = zfs_ioc_objset_stats_impl(nvp, &zc->zc_objset_stats,
-		    zc->zc_name, B_FALSE);
+	error = dmu_objset_hold(zc->zc_name, FTAG, &os);
+	if (error == 0) {
+		error = zfs_ioc_objset_stats_impl(nvp, &zc->zc_objset_stats,
+		    os, B_FALSE);
+
+		dmu_objset_rele(os, FTAG);
+	}
 
 	if (nv) {
 		if (error == 0) {
@@ -2419,7 +2406,7 @@ top:
 	if (error == 0 && strchr(zl->zl_name, '$') == NULL) {
 		/* fill in the stats */
 		error = zfs_ioc_objset_stats_impl(&zl->zl_nvlist,
-		    zl->zl_objset_stats, zl->zl_name, B_FALSE);
+		    zl->zl_objset_stats, os, B_FALSE);
 		if (error == ENOENT) {
 			/* we lost a race with destroy, get the next one. */
 			zl->zl_name[orig_len] = '\0';
@@ -2477,7 +2464,7 @@ zfs_ioc_snapshot_list_next_impl(zfs_list_t *zl, boolean_t simple)
 
 			error = dmu_objset_from_ds(ds, &ossnap);
 			if (error == 0) {
-				error = zfs_ioc_objset_stats_impl_nohold(&nv,
+				error = zfs_ioc_objset_stats_impl(&nv,
 				    zl->zl_objset_stats, ossnap, B_FALSE);
 			}
 			dsl_dataset_rele(ds, FTAG);
@@ -6021,7 +6008,7 @@ dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 		goto out1;
 	}
 
-	err = zfs_ioc_objset_stats_impl_nohold(&nvl,
+	err = zfs_ioc_objset_stats_impl(&nvl,
 	    &objset_stats, osp, B_TRUE);
 	if (err)
 		goto out1;
