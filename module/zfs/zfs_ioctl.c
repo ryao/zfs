@@ -5950,6 +5950,20 @@ dump_fs(vnode_t *vp, const char *fsname, nvlist_t *nvprops, dmu_objset_stats_t
 }
 
 static int
+nvl_add_nvl_zplprop(objset_t *os, nvlist_t *props, zfs_prop_t prop)
+{
+	uint64_t value;
+	int error;
+
+	if ((error = zfs_get_zplprop(os, prop, &value)))
+		return (error);
+
+	dsl_prop_nvlist_add_uint64(props, prop, value);
+
+	return (0);
+}
+
+static int
 dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 {
 	dls_t *dls = data;
@@ -6022,10 +6036,10 @@ dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 		    DLS_TRAVERSE_SNAPSHOT)) &&
 		    !(dls->dls_flags & DLS_TRAVERSE_FILESYSTEM))
 			goto out2;
-		if ((err = nvl_add_zplprop(osp, nvl, ZFS_PROP_VERSION)) ||
-		    (err = nvl_add_zplprop(osp, nvl, ZFS_PROP_NORMALIZE)) ||
-		    (err = nvl_add_zplprop(osp, nvl, ZFS_PROP_UTF8ONLY)) ||
-		    (err = nvl_add_zplprop(osp, nvl, ZFS_PROP_CASE)))
+		if ((err = nvl_add_nvl_zplprop(osp, nvl, ZFS_PROP_VERSION)) ||
+		    (err = nvl_add_nvl_zplprop(osp, nvl, ZFS_PROP_NORMALIZE)) ||
+		    (err = nvl_add_nvl_zplprop(osp, nvl, ZFS_PROP_UTF8ONLY)) ||
+		    (err = nvl_add_nvl_zplprop(osp, nvl, ZFS_PROP_CASE)))
 			goto out2;
 		break;
 	case DMU_OST_ZVOL:
