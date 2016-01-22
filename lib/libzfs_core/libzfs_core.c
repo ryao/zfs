@@ -1171,8 +1171,10 @@ lzc_list_iter(const char *name, nvlist_t *opts, lzc_iter_f func, void *data)
 		if (ret == -1)
 			break;
 
-		if (size != ret)
+		if (size != ret) {
 			ret = EINVAL;
+			break;
+		}
 
 		if ((ret = nvlist_unpack(buf +
 		    zpr.zpr_header_size, size, &nvl, 0)) != 0)
