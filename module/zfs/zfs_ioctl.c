@@ -5893,8 +5893,8 @@ dump_zpr(nvlist_t *nvl, vnode_t *vp) {
 	ASSERT(sizeof (zfs_pipe_record_t) == sizeof (uint64_t));
 
 	nvsize = fnvlist_size(nvl);
-	if (nvsize > (1 << (sizeof (zpr->zpr_data_size) + 8)))
-		return (EOVERFLOW);
+	if (nvsize > UINT32_MAX - 8)
+		return (SET_ERROR(EOVERFLOW));
 
 	/*
 	 * Allocate memory ourselves so that we can include space for the
