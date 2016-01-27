@@ -1462,7 +1462,6 @@ get_callback(zfs_handle_t *zhp, void *data)
 	zprop_source_t sourcetype;
 	char source[ZFS_MAXNAMELEN];
 	zprop_get_cbdata_t *cbp = data;
-	nvlist_t *user_props = zfs_get_user_props(zhp);
 	zprop_list_t *pl = cbp->cb_proplist;
 	nvlist_t *propval;
 	char *strval;
@@ -1528,7 +1527,7 @@ get_callback(zfs_handle_t *zhp, void *data)
 			zprop_print_one_property(zfs_get_name(zhp), cbp,
 			    pl->pl_user_prop, buf, sourcetype, source, NULL);
 		} else {
-			if (nvlist_lookup_nvlist(user_props,
+			if (nvlist_lookup_nvlist(zhp->zfs_props,
 			    pl->pl_user_prop, &propval) != 0) {
 				if (pl->pl_all)
 					continue;
@@ -2942,7 +2941,6 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 	zprop_list_t *pl = cb->cb_proplist;
 	boolean_t first = B_TRUE;
 	char property[ZFS_MAXPROPLEN];
-	nvlist_t *userprops = zfs_get_user_props(zhp);
 	nvlist_t *propval;
 	char *propstr;
 	boolean_t right_justify;
@@ -2985,7 +2983,7 @@ print_dataset(zfs_handle_t *zhp, list_cbdata_t *cb)
 				propstr = property;
 			right_justify = B_TRUE;
 		} else {
-			if (nvlist_lookup_nvlist(userprops,
+			if (nvlist_lookup_nvlist(zhp->zfs_props,
 			    pl->pl_user_prop, &propval) != 0)
 				propstr = "-";
 			else
