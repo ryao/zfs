@@ -6267,8 +6267,10 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 		dls_flags |= DLS_RECURSE;
 		(void) nvlist_lookup_uint64(opts, "minrecurse", &mindepth);
 		(void) nvlist_lookup_uint64(opts, "maxrecurse", &maxdepth);
-		if (mindepth > maxdepth)
-			return (EINVAL);
+		if (mindepth > maxdepth) {
+			releasef(fd);
+			return (SET_ERROR(EINVAL));
+		}
 	}
 
 	/* Pass an object number when given a DSL directory name */
@@ -6276,11 +6278,14 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 		dsl_dataset_t *ds = NULL;
 
 		error = dsl_pool_hold(fsname, FTAG, &dp);
-		if (error != 0)
+		if (error != 0) {
+			releasef(fd);
 			return (error);
+		}
 		error = dsl_dataset_hold(dp, fsname, FTAG, &ds);
 		if (error != 0) {
 			dsl_pool_rele(dp, FTAG);
+			releasef(fd);
 			return (error);
 		}
 
