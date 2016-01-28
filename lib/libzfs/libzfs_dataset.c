@@ -2003,10 +2003,18 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 				*val = zfs_prop_default_numeric(prop);
 			return (-1);
 		}
-		if (nvlist_lookup_uint64(zhp->zfs_props,
-		    zfs_prop_to_name(prop), val) != 0) {
+		/*
+		 * Early versions of the stable API allowed the kernel to pass
+		 * these properties outside of nvlists
+		 */
+		if (nvlist_exists(zhp->zfs_props, zfs_prop_to_name(prop))) {
+			if (nvlist_lookup_uint64(zhp->zfs_props,
+			    zfs_prop_to_name(prop), val) != 0) {
+				*val = getprop_uint64(zhp, prop, source);
+			}
+		} else
 			return (-1);
-		}
+
 		break;
 
 	case ZFS_PROP_INCONSISTENT:
