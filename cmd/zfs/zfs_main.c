@@ -1570,7 +1570,7 @@ static int
 zfs_do_get(int argc, char **argv)
 {
 	zprop_get_cbdata_t cb = { 0 };
-	int i, c, flags = ZFS_ITER_ARGS_CAN_BE_PATHS;
+	int i, c, flags = ZFS_ITER_ARGS_CAN_BE_PATHS|ZFS_ITER_TYPES_SPECIFIED;
 	int types = ZFS_TYPE_DATASET;
 	char *value, *fields;
 	int ret = 0;
@@ -1708,7 +1708,6 @@ zfs_do_get(int argc, char **argv)
 
 		case 't':
 			types = 0;
-			flags |= ZFS_ITER_TYPES_SPECIFIED;
 			while (*optarg != '\0') {
 				static char *type_subopts[] = { "filesystem",
 				    "volume", "snapshot", "bookmark",
