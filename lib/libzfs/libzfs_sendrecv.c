@@ -715,6 +715,12 @@ send_iterate_prop(zfs_handle_t *zhp, nvlist_t *nv)
 				continue;
 		}
 
+		if (zfs_prop_user(propname)) {
+			strval = fnvlist_lookup_string(propnv, ZPROP_VALUE);
+			fnvlist_add_string(nv, propname, strval);
+			continue;
+		}
+
 		switch (zfs_prop_get_type(prop)) {
 		case PROP_TYPE_INDEX:
 			break;
