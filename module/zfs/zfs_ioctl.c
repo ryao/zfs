@@ -1134,7 +1134,7 @@ zfs_secpolicy_create_clone(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
 	    sizeof (parentname))) != 0)
 		return (error);
 
-	if (nvlist_lookup_string(innvl, "origin", &origin) == 0 &&
+	if (innvl && nvlist_lookup_string(innvl, "origin", &origin) == 0 &&
 	    (error = zfs_secpolicy_write_perms(origin,
 	    ZFS_DELEG_PERM_CLONE, cr)) != 0)
 		return (error);
@@ -6613,7 +6613,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 },
 {	.zvec_name		= "zfs_create",
 	.zvec_func		= zfs_stable_ioc_zfs_create,
-	.zvec_secpolicy		= zfs_secpolicy_config,
+	.zvec_secpolicy		= zfs_secpolicy_create_clone,
 	.zvec_namecheck		= DATASET_NAME,
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_TRUE,
