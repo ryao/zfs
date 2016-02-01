@@ -2121,18 +2121,35 @@ dmu_objset_stats_nvlist(dmu_objset_stats_t *stat)
 }
 
 int
+dmu_nvl_get_type(nvlist_t *nvl, const char *key, dmu_objset_type_t *type)
+{
+	int i;
+	char *type_in;
+
+	if (nvlist_lookup_string(nvl, key, &type_in) != 0)
+		return (ENOENT);
+
+	for (i = 0; i < DMU_OT_COUNT; i++) {
+		if (strcmp(dmu_objset_types[i], type_in) == 0) {
+			*type = i;
+			return (0);
+		}
+	}
+
+	return (EINVAL);
+}
+
+int
 dmu_objset_stat_nvlts(nvlist_t *nvl, dmu_objset_stats_t *stat)
 {
-	char *type;
 	boolean_t issnap, inconsist;
-	int i;
 
 	if (nvlist_lookup_uint64(nvl, "dds_num_clones",
 	    &stat->dds_num_clones) ||
 	    nvlist_lookup_uint64(nvl, "dds_creation_txg",
 	    &stat->dds_creation_txg) ||
 	    nvlist_lookup_uint64(nvl, "dds_guid", &stat->dds_guid) ||
-	    nvlist_lookup_string(nvl, "dds_type", &type) ||
+	    dmu_nvl_get_type(nvl, "dds_type", &stat->dds_type) ||
 	    nvlist_lookup_boolean_value(nvl, "dds_is_snapshot", &issnap) ||
 	    nvlist_lookup_boolean_value(nvl, "dds_inconsistent", &inconsist))
 		return (EINVAL);
@@ -2140,14 +2157,7 @@ dmu_objset_stat_nvlts(nvlist_t *nvl, dmu_objset_stats_t *stat)
 	stat->dds_inconsistent = inconsist;
 	stat->dds_is_snapshot = issnap;
 
-	for (i = 0; i < DMU_OT_COUNT; i++) {
-		if (strcmp(dmu_objset_types[i], type) == 0) {
-			stat->dds_type = i;
-			return (0);
-		}
-	}
-
-	return (EINVAL);
+	return (0);
 }
 
 

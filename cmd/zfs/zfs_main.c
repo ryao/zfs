@@ -698,14 +698,11 @@ zfs_do_clone(int argc, char **argv)
 	}
 
 	/* pass to libzfs */
-	ret = zfs_clone(zhp, argv[1], props);
+	ret = zfs_clone(zhp, argv[1], props, history_str);
 
 	/* create the mountpoint if necessary */
 	if (ret == 0) {
-		if (log_history) {
-			(void) zpool_log_history(g_zfs, history_str);
-			log_history = B_FALSE;
-		}
+		log_history = B_FALSE;
 
 		ret = zfs_mount_and_share(g_zfs, argv[1], ZFS_TYPE_DATASET);
 	}
@@ -875,13 +872,11 @@ zfs_do_create(int argc, char **argv)
 	}
 
 	/* pass to libzfs */
-	if (zfs_create(g_zfs, argv[0], type, props) != 0)
+	if (zfs_create(g_zfs, argv[0], type, props,
+	    (log_history) ? history_str : NULL) != 0)
 		goto error;
 
-	if (log_history) {
-		(void) zpool_log_history(g_zfs, history_str);
-		log_history = B_FALSE;
-	}
+	log_history = B_FALSE;
 
 	ret = zfs_mount_and_share(g_zfs, argv[0], ZFS_TYPE_DATASET);
 error:
@@ -927,6 +922,7 @@ typedef struct destroy_cbdata {
 	int64_t		cb_snapused;
 	char		*cb_snapspec;
 	char		*cb_bookmark;
+	const char	*cb_log_history;
 } destroy_cbdata_t;
 
 /*
@@ -1037,10 +1033,12 @@ destroy_callback(zfs_handle_t *zhp, void *data)
 
 		if (error != 0 ||
 		    zfs_unmount(zhp, NULL, cb->cb_force ? MS_FORCE : 0) != 0 ||
-		    zfs_destroy(zhp, cb->cb_defer_destroy) != 0) {
+		    zfs_destroy(zhp, cb->cb_defer_destroy,
+		    cb->cb_log_history) != 0) {
 			zfs_close(zhp);
 			return (-1);
 		}
+		cb->cb_log_history = NULL;
 	}
 
 	zfs_close(zhp);
@@ -1397,6 +1395,8 @@ zfs_do_destroy(int argc, char **argv)
 			goto out;
 		}
 
+		cb.cb_log_history = (log_history) ? history_str : NULL;
+		log_history = B_FALSE;
 		/*
 		 * Do the real thing.  The callback will close the
 		 * handle regardless of whether it succeeds or not.

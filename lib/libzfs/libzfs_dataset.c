@@ -64,6 +64,10 @@
 #include "libzfs_impl.h"
 #include "zfs_deleg.h"
 
+
+/* XXX: workaround inability to include dmu_objset.h */
+extern const char *dmu_objset_type_name(dmu_objset_type_t type);
+
 static int userquota_propname_decode(const char *propname, boolean_t zoned,
     zfs_userquota_prop_t *typep, char *domain, int domainlen, uint64_t *ridp);
 
@@ -3080,7 +3084,7 @@ create_parents(libzfs_handle_t *hdl, char *target, int prefixlen)
 		}
 
 		if (zfs_create(hdl, target, ZFS_TYPE_FILESYSTEM,
-		    NULL) != 0) {
+		    NULL, NULL) != 0) {
 			opname = dgettext(TEXT_DOMAIN, "create");
 			goto ancestorerr;
 		}
@@ -3140,7 +3144,7 @@ zfs_create_ancestors(libzfs_handle_t *hdl, const char *path)
  */
 int
 zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
-    nvlist_t *props)
+    nvlist_t *props, const char *log_history)
 {
 	int ret;
 	uint64_t size = 0;
@@ -3148,6 +3152,7 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 	char errbuf[1024];
 	uint64_t zoned;
 	dmu_objset_type_t ost;
+	nvlist_t *opts = NULL;
 
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot create '%s'"), path);
@@ -3228,9 +3233,22 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 		}
 	}
 
+	if (log_history) {
+		opts = fnvlist_alloc();
+		fnvlist_add_string(opts, "log_history", log_history);
+	}
+
 	/* create the dataset */
-	ret = lzc_create(path, ost, props);
+	ret = lzc_create_ext(path, dmu_objset_type_name(ost), props, opts,
+	    NULL);
+
+	/* Fallback to older version on EINVAL */
+	if (ret == EINVAL) {
+		ret = lzc_create(path, type, props);
+	}
 	nvlist_free(props);
+	if (opts)
+		nvlist_free(opts);
 
 	/* check for failure */
 	if (ret != 0) {
@@ -3287,7 +3305,7 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
  * does not exist this function does nothing.
  */
 int
-zfs_destroy(zfs_handle_t *zhp, boolean_t defer)
+zfs_destroy(zfs_handle_t *zhp, boolean_t defer, const char *log_history)
 {
 	nvlist_t *opts = NULL;
 	int ret = 0;
@@ -3305,13 +3323,16 @@ zfs_destroy(zfs_handle_t *zhp, boolean_t defer)
 		return (0);
 	}
 
-	if (defer) {
+	if (defer || log_history) {
 		opts = fnvlist_alloc();
-		fnvlist_add_boolean(opts, "defer");
+		if (defer)
+			fnvlist_add_boolean(opts, "defer");
+		if (log_history)
+			fnvlist_add_string(opts, "log_history", log_history);
 	}
 
 	ret = lzc_destroy_one(zhp->zfs_name, opts);
-	if (defer)
+	if (opts)
 		fnvlist_free(opts);
 
 	if (ret != 0 && ret != ENOENT) {
@@ -3420,13 +3441,15 @@ zfs_destroy_snaps_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, boolean_t defer)
  * Clones the given dataset.  The target must be of the same type as the source.
  */
 int
-zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
+zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props,
+    const char *log_history)
 {
 	char parent[ZFS_MAXNAMELEN];
 	int ret;
 	char errbuf[1024];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	uint64_t zoned;
+	nvlist_t *opts = NULL;
 
 	assert(zhp->zfs_type == ZFS_TYPE_SNAPSHOT);
 
@@ -3457,8 +3480,16 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 			return (-1);
 	}
 
-	ret = lzc_clone(target, zhp->zfs_name, props);
+	if (log_history) {
+		opts = fnvlist_alloc();
+		fnvlist_add_string(opts, "log_history", log_history);
+	}
+
+	/* create the dataset */
+	ret = lzc_clone_ext(target, zhp->zfs_name, props, opts, NULL);
 	nvlist_free(props);
+	if (opts)
+		nvlist_free(opts);
 
 	if (ret != 0) {
 		switch (errno) {
@@ -3719,7 +3750,7 @@ rollback_destroy_dependent(zfs_handle_t *zhp, void *data)
 		zfs_close(zhp);
 		return (0);
 	}
-	if (zfs_destroy(zhp, B_FALSE) != 0)
+	if (zfs_destroy(zhp, B_FALSE, NULL) != 0)
 		cbp->cb_error = B_TRUE;
 	else
 		changelist_remove(clp, zhp->zfs_name);
@@ -3739,7 +3770,7 @@ rollback_destroy(zfs_handle_t *zhp, void *data)
 		cbp->cb_error |= zfs_iter_dependents(zhp, B_FALSE,
 		    rollback_destroy_dependent, cbp);
 
-		cbp->cb_error |= zfs_destroy(zhp, B_FALSE);
+		cbp->cb_error |= zfs_destroy(zhp, B_FALSE, NULL);
 	}
 
 	zfs_close(zhp);

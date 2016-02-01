@@ -32,6 +32,7 @@
 #include <stddef.h>
 #include <libintl.h>
 #include <libzfs.h>
+#include <zfs_type.h>
 
 #include "libzfs_impl.h"
 
@@ -61,24 +62,6 @@ zfs_iter_clones(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 		}
 	}
 	return (0);
-}
-
-static char *zfs_types[] = { "filesystem", "snapshot", "volume", "pool",
-	"bookmark" };
-
-#define	ZFS_TYPE_COUNT	(sizeof (zfs_types) / sizeof (&zfs_types[0]))
-
-static nvlist_t *
-zfs_type_to_nvl(zfs_type_t type)
-{
-	nvlist_t *nvl = fnvlist_alloc();
-	int i;
-
-	for (i = 0; i < ZFS_TYPE_COUNT; i++)
-		if (type & (1 << i))
-			fnvlist_add_boolean(nvl, zfs_types[i]);
-
-	return (nvl);
 }
 
 typedef struct zfs_iter_cb_data {

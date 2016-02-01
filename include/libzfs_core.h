@@ -53,7 +53,11 @@ int lzc_list(const char *, nvlist_t *);
 int lzc_list_iter(const char *, nvlist_t *, lzc_iter_f, void *);
 int lzc_snapshot(nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_create(const char *, enum dmu_objset_type, nvlist_t *);
+int lzc_create_ext(const char *, const char *, nvlist_t *, nvlist_t *,
+    nvlist_t **);
 int lzc_clone(const char *, const char *, nvlist_t *);
+int lzc_clone_ext(const char *, const char *, nvlist_t *, nvlist_t *,
+    nvlist_t **);
 int lzc_promote(const char *, nvlist_t *, nvlist_t **);
 int lzc_set_props(const char *, nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_destroy_one(const char *, nvlist_t *);
