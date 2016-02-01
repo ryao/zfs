@@ -247,6 +247,20 @@ lzc_create(const char *fsname, dmu_objset_type_t type, nvlist_t *props)
 }
 
 int
+lzc_create_ext(const char *fsname, const char *type, nvlist_t *props,
+    nvlist_t *opts, nvlist_t **errlist)
+{
+	int error;
+	nvlist_t *args = fnvlist_alloc();
+	fnvlist_add_string(args, "type", type);
+	if (props != NULL)
+		fnvlist_add_nvlist(args, "props", props);
+	error = lzc_ioctl("zfs_create", fsname, args, opts, errlist, 1);
+	nvlist_free(args);
+	return (error);
+}
+
+int
 lzc_clone(const char *fsname, const char *origin,
     nvlist_t *props)
 {
@@ -256,6 +270,20 @@ lzc_clone(const char *fsname, const char *origin,
 	if (props != NULL)
 		fnvlist_add_nvlist(args, "props", props);
 	error = lzc_ioctl("zfs_clone", fsname, args, NULL, NULL, 0);
+	nvlist_free(args);
+	return (error);
+}
+
+int
+lzc_clone_ext(const char *fsname, const char *origin,
+    nvlist_t *props, nvlist_t *opts, nvlist_t **errlist)
+{
+	int error;
+	nvlist_t *args = fnvlist_alloc();
+	fnvlist_add_string(args, "origin", origin);
+	if (props != NULL)
+		fnvlist_add_nvlist(args, "props", props);
+	error = lzc_ioctl("zfs_clone", fsname, args, opts, errlist, 0);
 	nvlist_free(args);
 	return (error);
 }

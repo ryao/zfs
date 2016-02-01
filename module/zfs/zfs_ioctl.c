@@ -192,6 +192,7 @@
 #include "zfs_prop.h"
 #include "zfs_deleg.h"
 #include "zfs_comutil.h"
+#include "zfs_type.h"
 
 kmutex_t zfsdev_state_lock;
 zfsdev_state_t *zfsdev_state_list;
@@ -240,6 +241,7 @@ typedef struct zfs_stable_ioc_vec {
 	zfs_ioc_poolcheck_t	zvec_pool_check;
 	boolean_t		zvec_smush_outnvlist;
 	const char *const	zvec_name;
+	uint64_t		zvec_max_version;
 } zfs_stable_ioc_vec_t;
 
 /* This array is indexed by zfs_userquota_prop_t */
@@ -3468,27 +3470,39 @@ zfs_fill_zplprops_root(uint64_t spa_vers, nvlist_t *createprops,
 
 /*
  * innvl: {
- *     "type" -> dmu_objset_type_t (int32)
+ *     "type" -> value (string)
  *     (optional) "props" -> { prop -> value }
+ * }
+ *
+ * opts: {
+ *     (optional) "log_history" -> value (string)
  * }
  *
  * outnvl: propname -> error code (int32)
  */
 static int
-zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
+zfs_stable_ioc_zfs_create(const char *fsname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
 {
 	int error = 0;
 	zfs_creat_t zct = { 0 };
 	nvlist_t *nvprops = NULL;
 	void (*cbfunc)(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx);
-	int32_t type32;
 	dmu_objset_type_t type;
 	boolean_t is_insensitive = B_FALSE;
 
-	if (nvlist_lookup_int32(innvl, "type", &type32) != 0)
-		return (SET_ERROR(EINVAL));
-	type = type32;
-	(void) nvlist_lookup_nvlist(innvl, "props", &nvprops);
+	if (version == 0) {
+		int32_t type32;
+		if (nvlist_lookup_int32(innvl, "type", &type32) != 0)
+			return (SET_ERROR(EINVAL));
+		type = type32;
+	} else {
+		if (dmu_nvl_get_type(innvl, "type", &type) != 0)
+			return (SET_ERROR(EINVAL));
+	}
+
+	if (nvlist_lookup_nvlist(innvl, "props", &nvprops) != 0)
+		nvprops = NULL;
 
 	switch (type) {
 	case DMU_OST_ZFS:
@@ -3574,6 +3588,12 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 #endif
 
 	return (error);
+}
+
+int
+zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	return (zfs_stable_ioc_zfs_create(fsname, innvl, outnvl, NULL, 0));
 }
 
 /*
@@ -5879,7 +5899,6 @@ LIBZFS_CORE_WRAPPER_FUNC(log_history)
 LIBZFS_CORE_WRAPPER_FUNC(space_snaps)
 LIBZFS_CORE_WRAPPER_FUNC_2NAME(send_new, send)
 LIBZFS_CORE_WRAPPER_FUNC(send_space)
-LIBZFS_CORE_WRAPPER_FUNC(create)
 LIBZFS_CORE_WRAPPER_FUNC(clone)
 LIBZFS_CORE_WRAPPER_FUNC(destroy_snaps)
 LIBZFS_CORE_WRAPPER_FUNC(hold)
@@ -6618,6 +6637,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_TRUE,
 	.zvec_allow_log		= B_TRUE,
+	.zvec_max_version	= 1,
 },
 {	.zvec_name		= "zfs_clone",
 	.zvec_func		= zfs_stable_ioc_zfs_clone,
@@ -6832,9 +6852,6 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 	if ((error = nvlist_lookup_uint64(mnvl, "version", &version)) != 0)
 		return (error);
 
-	/* We do not support sequence numbers above 0 right now */
-	if (version != 0)
-		return (SET_ERROR(EINVAL));
 	/*
 	 * Ensure that all pool/dataset names are valid before we pass down to
 	 * the lower layers.
@@ -6848,6 +6865,9 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 			nvlist_t *lognv = NULL;
 			spa_t *spa;
 			int puterror = 0;
+
+			if (version > vec->zvec_max_version)
+				return (SET_ERROR(EINVAL));
 
 			error = zfs_namecheck(name, vec->zvec_namecheck,
 			    vec->zvec_pool_check);
@@ -6876,11 +6896,26 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 			    outnvl, opts, version);
 			if (error == 0 && vec->zvec_allow_log &&
 			    spa_open(zc->zc_name, &spa, FTAG) == 0) {
+				const char *message;
 				if (!nvlist_empty(outnvl)) {
 					fnvlist_add_nvlist(lognv,
 					    ZPOOL_HIST_OUTPUT_NVL, outnvl);
 				}
 				(void) spa_history_log_nvl(spa, lognv);
+
+				/* Log userspace history */
+				if (spa_version(spa) >=
+				    SPA_VERSION_ZPOOL_HISTORY &&
+				    nvlist_lookup_string(opts, "log_history",
+				    (char **)&message) == 0) {
+					int err;
+
+					err = spa_history_log(spa, message);
+
+					if (err != 0)
+						nvlist_add_int32(outnvl,
+						    "log_history", err);
+				}
 				spa_close(spa, FTAG);
 			}
 			fnvlist_free(lognv);
@@ -6904,6 +6939,9 @@ zfs_ioc_stable(zfs_cmd_t *zc)
 
 		}
 	}
+
+	if (i == zfs_stable_ioc_vec_count)
+		error = SET_ERROR(EINVAL);
 
 out:
 	nvlist_free(mnvl);
