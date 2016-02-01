@@ -5866,6 +5866,7 @@ typedef enum dls_flag {
 	DLS_TRAVERSE_SNAPSHOT	= 1 << 2,
 	DLS_TRAVERSE_VOLUME	= 1 << 3,
 	DLS_TRAVERSE_BOOKMARK	= 1 << 4,
+	DLS_IGNORE_LISTSNAPS	= 1 << 5,
 } dls_flag_t;
 
 typedef struct dls {
@@ -6081,7 +6082,8 @@ dump_list_strategy_one(dsl_pool_t *dp, uint64_t dd_object,
 	if (dls->dls_flags & DLS_TRAVERSE_SNAPSHOT) {
 		dmu_flags |= DS_FIND_SNAPSHOTS;
 	} else if (dls->dls_flags & DLS_RECURSE &&
-	    dp->dp_spa->spa_pool_props_object != 0) {
+	    dp->dp_spa->spa_pool_props_object != 0 &&
+	    (dls->dls_flags & DLS_IGNORE_LISTSNAPS) == 0) {
 		uint64_t listsnap = 0;
 
 		(void) zap_lookup(dp->dp_meta_objset,
@@ -6267,6 +6269,7 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 
 	if (nvlist_lookup_nvlist(opts, "type", &type) == 0 &&
 	    !nvlist_empty(type)) {
+		dls_flags |= DLS_IGNORE_LISTSNAPS;
 		if (nvlist_exists(type, "all"))
 			dls_flags |= DLS_TRAVERSE_ALL;
 		else {
