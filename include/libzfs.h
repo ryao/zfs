@@ -375,7 +375,7 @@ extern int zpool_export_force(zpool_handle_t *, const char *);
 extern int zpool_import(libzfs_handle_t *, nvlist_t *, const char *,
     char *altroot);
 extern int zpool_import_props(libzfs_handle_t *, nvlist_t *, const char *,
-    nvlist_t *, int);
+    nvlist_t *, int, const char *);
 extern void zpool_print_unsup_feat(nvlist_t *config);
 
 /*

@@ -1651,7 +1651,7 @@ zpool_import(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 	}
 
 	ret = zpool_import_props(hdl, config, newname, props,
-	    ZFS_IMPORT_NORMAL);
+	    ZFS_IMPORT_NORMAL, NULL);
 	if (props)
 		nvlist_free(props);
 	return (ret);
@@ -1717,7 +1717,7 @@ zpool_print_unsup_feat(nvlist_t *config)
  */
 int
 zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
-    nvlist_t *props, int flags)
+    nvlist_t *props, int flags, const char *log_history)
 {
 	zpool_rewind_policy_t policy;
 	nvlist_t *nv = NULL;
@@ -1783,6 +1783,9 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 		if (flags & ZFS_IMPORT_TEMP_NAME)
 			fnvlist_add_boolean(opts, "temp_name");
 	}
+
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
 
 	ret = lzc_pool_import(thename, nv, opts, &newconfig);
 
