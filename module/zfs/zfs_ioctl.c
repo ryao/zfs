@@ -3793,15 +3793,21 @@ zfs_destroy_unmount_origin(const char *fsname)
  */
 /* ARGSUSED */
 static int
-zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
+zfs_stable_ioc_zfs_destroy_snaps(const char *fsname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
 {
 	nvlist_t *snaps;
 	nvpair_t *pair;
 	boolean_t defer;
 
-	if (nvlist_lookup_nvlist(innvl, "snaps", &snaps) != 0)
-		return (SET_ERROR(EINVAL));
-	defer = nvlist_exists(innvl, "defer");
+	if (version == 0) {
+		if (nvlist_lookup_nvlist(innvl, "snaps", &snaps) != 0)
+			return (SET_ERROR(EINVAL));
+		defer = nvlist_exists(innvl, "defer");
+	} else {
+		snaps = innvl;
+		defer = nvlist_exists(opts, "defer");
+	}
 
 	for (pair = nvlist_next_nvpair(snaps, NULL); pair != NULL;
 	    pair = nvlist_next_nvpair(snaps, pair)) {
@@ -3809,6 +3815,13 @@ zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 	}
 
 	return (dsl_destroy_snapshots_nvl(snaps, defer, outnvl));
+}
+
+static int
+zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	return (zfs_stable_ioc_zfs_destroy_snaps(poolname, innvl, outnvl, NULL,
+	    0));
 }
 
 /*
@@ -5866,7 +5879,6 @@ LIBZFS_CORE_WRAPPER_FUNC(space_snaps)
 LIBZFS_CORE_WRAPPER_FUNC_2NAME(send_new, send)
 LIBZFS_CORE_WRAPPER_FUNC(send_space)
 LIBZFS_CORE_WRAPPER_FUNC(clone)
-LIBZFS_CORE_WRAPPER_FUNC(destroy_snaps)
 LIBZFS_CORE_WRAPPER_FUNC(hold)
 LIBZFS_CORE_WRAPPER_FUNC(release)
 LIBZFS_CORE_WRAPPER_FUNC(get_holds)
@@ -6636,6 +6648,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_TRUE,
 	.zvec_allow_log		= B_TRUE,
+	.zvec_max_version	= 1,
 },
 {	.zvec_name		= "zfs_hold",
 	.zvec_func		= zfs_stable_ioc_zfs_hold,

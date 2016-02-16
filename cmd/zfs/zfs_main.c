@@ -1027,9 +1027,12 @@ destroy_callback(zfs_handle_t *zhp, void *data)
 		fnvlist_add_boolean(cb->cb_batchedsnaps, name);
 	} else {
 		int error = zfs_destroy_snaps_nvl(g_zfs,
-		    cb->cb_batchedsnaps, B_FALSE);
+		    cb->cb_batchedsnaps, B_FALSE, cb->cb_log_history);
 		fnvlist_free(cb->cb_batchedsnaps);
 		cb->cb_batchedsnaps = fnvlist_alloc();
+
+		if (error == 0)
+			cb->cb_log_history = NULL;
 
 		if (error != 0 ||
 		    zfs_unmount(zhp, NULL, cb->cb_force ? MS_FORCE : 0) != 0 ||
@@ -1245,6 +1248,8 @@ zfs_do_destroy(int argc, char **argv)
 		usage(B_FALSE);
 	}
 
+	cb.cb_log_history = (log_history) ? history_str : NULL;
+
 	at = strchr(argv[0], '@');
 	pound = strchr(argv[0], '#');
 	if (at != NULL) {
@@ -1293,16 +1298,23 @@ zfs_do_destroy(int argc, char **argv)
 				err = destroy_clones(&cb);
 				if (err == 0) {
 					err = zfs_destroy_snaps_nvl(g_zfs,
-					    cb.cb_batchedsnaps, B_FALSE);
+					    cb.cb_batchedsnaps, B_FALSE,
+					    cb.cb_log_history);
 				}
 				if (err != 0) {
 					rv = 1;
 					goto out;
 				}
+				cb.cb_log_history = NULL;
+				log_history = B_FALSE;
 			}
 			if (err == 0) {
 				err = zfs_destroy_snaps_nvl(g_zfs, cb.cb_nvl,
-				    cb.cb_defer_destroy);
+				    cb.cb_defer_destroy, NULL);
+				if (err == 0) {
+					cb.cb_log_history = NULL;
+					log_history = B_FALSE;
+				}
 			}
 		}
 
@@ -1395,8 +1407,6 @@ zfs_do_destroy(int argc, char **argv)
 			goto out;
 		}
 
-		cb.cb_log_history = (log_history) ? history_str : NULL;
-		log_history = B_FALSE;
 		/*
 		 * Do the real thing.  The callback will close the
 		 * handle regardless of whether it succeeds or not.
@@ -1404,8 +1414,9 @@ zfs_do_destroy(int argc, char **argv)
 		err = destroy_callback(zhp, &cb);
 		zhp = NULL;
 		if (err == 0) {
+			log_history = B_FALSE;
 			err = zfs_destroy_snaps_nvl(g_zfs,
-			    cb.cb_batchedsnaps, cb.cb_defer_destroy);
+			    cb.cb_batchedsnaps, cb.cb_defer_destroy, NULL);
 		}
 		if (err != 0)
 			rv = 1;

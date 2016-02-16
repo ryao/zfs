@@ -63,6 +63,7 @@ int lzc_promote(const char *, nvlist_t *, nvlist_t **);
 int lzc_set_props(const char *, nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_destroy_one(const char *, nvlist_t *);
 int lzc_destroy_snaps(nvlist_t *, boolean_t, nvlist_t **);
+int lzc_destroy_snaps_ext(const char *, nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_bookmark(nvlist_t *, nvlist_t **);
 int lzc_get_bookmarks(const char *, nvlist_t *, nvlist_t **);
 int lzc_destroy_bookmarks(nvlist_t *, nvlist_t **);
