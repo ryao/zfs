@@ -3527,12 +3527,18 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props,
  * Promotes the given clone fs to be the clone parent.
  */
 int
-zfs_promote(zfs_handle_t *zhp)
+zfs_promote(zfs_handle_t *zhp, const char *log_history)
 {
 	nvlist_t *outnvl = NULL;
+	nvlist_t *opts = fnvlist_alloc();
 	int ret;
 
-	ret = lzc_promote(zhp->zfs_name, NULL, &outnvl);
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
+
+	ret = lzc_promote(zhp->zfs_name, opts, &outnvl);
+
+	fnvlist_free(opts);
 
 	if (ret != 0) {
 		libzfs_handle_t *hdl = zhp->zfs_hdl;

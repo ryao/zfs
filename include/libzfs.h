@@ -641,7 +641,7 @@ extern int zfs_send(zfs_handle_t *, const char *, const char *,
     sendflags_t *, int, snapfilter_cb_t, void *, nvlist_t **);
 extern int zfs_send_one(zfs_handle_t *, const char *, int, enum lzc_send_flags);
 
-extern int zfs_promote(zfs_handle_t *);
+extern int zfs_promote(zfs_handle_t *, const char *);
 extern int zfs_hold(zfs_handle_t *, const char *, const char *,
     boolean_t, int);
 extern int zfs_hold_nvl(zfs_handle_t *, int, nvlist_t *);
