@@ -1546,13 +1546,14 @@ zfs_is_namespace_prop(zfs_prop_t prop)
  * Given a property name and value, set the property for the given dataset.
  */
 int
-zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
+zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval,
+    const char *log_history)
 {
 	int ret = -1;
 	prop_changelist_t *cl = NULL;
 	char errbuf[1024];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	nvlist_t *nvl = NULL, *realprops;
+	nvlist_t *nvl = NULL, *realprops, *opts = fnvlist_alloc();
 	zfs_prop_t prop;
 	boolean_t do_prefix = B_TRUE;
 	int added_resv = 0;
@@ -1608,11 +1609,14 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 	if (do_prefix && (ret = changelist_prefix(cl)) != 0)
 		goto error;
 
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
+
 	/*
 	 * Execute the corresponding ioctl() to set this property.
 	 * Call libzfs_core to set this property.
 	 */
-	ret = lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
+	ret = lzc_set_props(zhp->zfs_name, nvl, opts, NULL);
 
 	if (ret != 0) {
 		zfs_setprop_error(hdl, prop, errno, errbuf);
@@ -1627,7 +1631,7 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 			    zfs_prop_to_name(ZFS_PROP_VOLSIZE),
 			    old_volsize) != 0)
 				goto error;
-			(void) lzc_set_props(zhp->zfs_name, nvl, NULL, NULL);
+			(void) lzc_set_props(zhp->zfs_name, nvl, opts, NULL);
 		}
 	} else {
 		if (do_prefix)
@@ -1653,6 +1657,7 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 
 error:
 	nvlist_free(nvl);
+	fnvlist_free(opts);
 	if (cl)
 		changelist_free(cl);
 	return (ret);
@@ -2582,7 +2587,7 @@ zfs_prop_set_int(zfs_handle_t *zhp, zfs_prop_t prop, uint64_t val)
 	char buf[64];
 
 	(void) snprintf(buf, sizeof (buf), "%llu", (longlong_t)val);
-	return (zfs_prop_set(zhp, zfs_prop_to_name(prop), buf));
+	return (zfs_prop_set(zhp, zfs_prop_to_name(prop), buf, NULL));
 }
 
 /*

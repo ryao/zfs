@@ -2030,7 +2030,7 @@ upgrade_set_callback(zfs_handle_t *zhp, void *data)
 			(void) zpool_log_history(g_zfs, history_str);
 			log_history = B_FALSE;
 		}
-		if (zfs_prop_set(zhp, "version", verstr) == 0)
+		if (zfs_prop_set(zhp, "version", verstr, NULL) == 0)
 			cb->cb_numupgraded++;
 		else
 			cb->cb_numfailed++;
@@ -3479,6 +3479,7 @@ out:
 typedef struct set_cbdata {
 	char		*cb_propname;
 	char		*cb_value;
+	char		*cb_log_history;
 } set_cbdata_t;
 
 static int
@@ -3486,7 +3487,8 @@ set_callback(zfs_handle_t *zhp, void *data)
 {
 	set_cbdata_t *cbp = data;
 
-	if (zfs_prop_set(zhp, cbp->cb_propname, cbp->cb_value) != 0) {
+	if (zfs_prop_set(zhp, cbp->cb_propname, cbp->cb_value,
+	    cbp->cb_log_history) != 0) {
 		switch (libzfs_errno(g_zfs)) {
 		case EZFS_MOUNTFAILED:
 			(void) fprintf(stderr, gettext("property may be set "
@@ -3499,6 +3501,7 @@ set_callback(zfs_handle_t *zhp, void *data)
 		}
 		return (1);
 	}
+	cbp->cb_log_history = NULL;
 	return (0);
 }
 
@@ -3543,6 +3546,9 @@ zfs_do_set(int argc, char **argv)
 		    gettext("missing property in property=value argument\n"));
 		usage(B_FALSE);
 	}
+
+	cb.cb_log_history = (log_history) ? history_str : NULL;
+	log_history = B_FALSE;
 
 	ret = zfs_for_each(argc - 2, argv + 2, 0,
 	    ZFS_TYPE_DATASET, NULL, NULL, 0, set_callback, &cb);

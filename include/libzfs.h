@@ -459,7 +459,8 @@ extern nvlist_t *zfs_valid_proplist(libzfs_handle_t *, zfs_type_t,
     nvlist_t *, uint64_t, zfs_handle_t *, const char *);
 
 extern const char *zfs_prop_to_name(zfs_prop_t);
-extern int zfs_prop_set(zfs_handle_t *, const char *, const char *);
+extern int zfs_prop_set(zfs_handle_t *, const char *, const char *,
+    const char *);
 extern int zfs_prop_get(zfs_handle_t *, zfs_prop_t, char *, size_t,
     zprop_source_t *, char *, size_t, boolean_t);
 extern int zfs_prop_get_recvd(zfs_handle_t *, const char *, char *, size_t,
