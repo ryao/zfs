@@ -3289,8 +3289,8 @@ zfs_do_promote(int argc, char **argv)
 	if (zhp == NULL)
 		return (1);
 
-	ret = (zfs_promote(zhp) != 0);
-
+	ret = (zfs_promote(zhp, (log_history) ? history_str : NULL) != 0);
+	log_history = B_FALSE;
 
 	zfs_close(zhp);
 	return (ret);
