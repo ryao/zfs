@@ -3392,7 +3392,7 @@ zfs_destroy_snaps(zfs_handle_t *zhp, char *snapname, boolean_t defer)
 		    dgettext(TEXT_DOMAIN, "cannot destroy '%s@%s'"),
 		    zhp->zfs_name, snapname);
 	} else {
-		ret = zfs_destroy_snaps_nvl(zhp->zfs_hdl, dd.nvl, defer);
+		ret = zfs_destroy_snaps_nvl(zhp->zfs_hdl, dd.nvl, defer, NULL);
 	}
 	nvlist_free(dd.nvl);
 	return (ret);
@@ -3402,16 +3402,31 @@ zfs_destroy_snaps(zfs_handle_t *zhp, char *snapname, boolean_t defer)
  * Destroys all the snapshots named in the nvlist.
  */
 int
-zfs_destroy_snaps_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, boolean_t defer)
+zfs_destroy_snaps_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, boolean_t defer,
+    const char *log_history)
 {
 	int ret;
 	nvlist_t *errlist;
 	nvpair_t *pair;
+	nvlist_t *opts = fnvlist_alloc();
+	char pool[MAXNAMELEN];
 
-	ret = lzc_destroy_snaps(snaps, defer, &errlist);
-
-	if (ret == 0)
+	pair = nvlist_next_nvpair(snaps, NULL);
+	if (pair == NULL)
 		return (0);
+
+	(void) strlcpy(pool, nvpair_name(pair), sizeof (pool));
+	pool[strcspn(pool, "/@")] = '\0';
+
+	if (defer)
+		fnvlist_add_boolean(opts, "defer");
+
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
+
+	ret = lzc_destroy_snaps_ext(pool, snaps, opts, &errlist);
+
+	fnvlist_free(opts);
 
 	if (nvlist_empty(errlist)) {
 		char errbuf[1024];

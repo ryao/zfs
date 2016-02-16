@@ -407,6 +407,40 @@ lzc_destroy_snaps(nvlist_t *snaps, boolean_t defer, nvlist_t **errlist)
 	return (error);
 }
 
+/*
+ * Destroys snapshots.
+ *
+ * The keys in the snaps nvlist are the snapshots to be destroyed.
+ * They must all be in pool specified by the pool string.
+ *
+ * The opts nvlist is intended to allow for extensions. Currently, only history
+ * logging and the defer property are supported.
+ *
+ * { log_history -> string value }
+ * { defer -> boolean }
+ *
+ * If the defer property is not set, and a snapshot has user holds or clones,
+ * the destroy operation will fail and none of the snapshots will be destroyed.
+ *
+ * If the defer property is set, and a snapshot has user holds or clones, it
+ * will be marked for deferred destruction, and will be destroyed when the last
+ * hold or clone is removed/destroyed.
+ *
+ * The return value will be 0 if all snapshots were destroyed (or marked for
+ * later destruction if 'defer' is set) or didn't exist to begin with.
+ *
+ * Otherwise the return value will be the errno of a (unspecified) snapshot
+ * that failed, no snapshots will be destroyed, and the errlist will have an
+ * entry for each snapshot that failed. The value in the errlist will be the
+ * (int32) error code.
+ */
+int
+lzc_destroy_snaps_ext(const char *pool, nvlist_t *snaps, nvlist_t *opts,
+    nvlist_t **errlist)
+{
+	return (lzc_ioctl("zfs_destroy_snaps", pool, snaps, opts, errlist, 1));
+}
+
 int
 lzc_snaprange_space(const char *firstsnap, const char *lastsnap,
     uint64_t *usedp)
