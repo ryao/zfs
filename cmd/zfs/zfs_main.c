@@ -3654,7 +3654,8 @@ zfs_do_snapshot(int argc, char **argv)
 			goto usage;
 	}
 
-	ret = zfs_snapshot_nvl(g_zfs, sd.sd_nvl, props);
+	ret = zfs_snapshot_nvl(g_zfs, sd.sd_nvl, props,
+	    (log_history) ? history_str : NULL);
 	nvlist_free(sd.sd_nvl);
 	nvlist_free(props);
 	if (ret != 0 && multiple_snaps)

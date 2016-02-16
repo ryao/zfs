@@ -3630,10 +3630,12 @@ zfs_snapshot_cb(zfs_handle_t *zhp, void *arg)
  * created.
  */
 int
-zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, nvlist_t *props)
+zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, nvlist_t *props,
+    const char *log_history)
 {
 	int ret;
 	char errbuf[1024];
+	nvlist_t *opts;
 	nvpair_t *elem;
 	nvlist_t *errors;
 
@@ -3660,7 +3662,13 @@ zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, nvlist_t *props)
 		return (-1);
 	}
 
-	ret = lzc_snapshot(snaps, props, &errors);
+	opts = fnvlist_alloc();
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
+
+	ret = lzc_snapshot_ext(snaps, props, opts, &errors);
+
+	fnvlist_free(opts);
 
 	if (ret != 0) {
 		boolean_t printed = B_FALSE;
@@ -3728,7 +3736,7 @@ zfs_snapshot(libzfs_handle_t *hdl, const char *path, boolean_t recursive,
 		fnvlist_add_boolean(sd.sd_nvl, path);
 	}
 
-	ret = zfs_snapshot_nvl(hdl, sd.sd_nvl, props);
+	ret = zfs_snapshot_nvl(hdl, sd.sd_nvl, props, NULL);
 	nvlist_free(sd.sd_nvl);
 	zfs_close(zhp);
 	return (ret);

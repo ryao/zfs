@@ -313,6 +313,9 @@ lzc_set_props(const char *fsname, nvlist_t *props, nvlist_t *opts,
  * The props nvlist is properties to set.  Currently only user properties
  * are supported.  { user:prop_name -> string value }
  *
+ * The opts nvlist is intended to allow for extensions. Currently, only history
+ * logging is supported. { log_history -> string value }
+ *
  * The returned results nvlist will have an entry for each snapshot that failed.
  * The value will be the (int32) error code.
  *
@@ -320,7 +323,8 @@ lzc_set_props(const char *fsname, nvlist_t *props, nvlist_t *opts,
  * be the errno of a (unspecified) snapshot that failed.
  */
 int
-lzc_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t **errlist)
+lzc_snapshot_ext(nvlist_t *snaps, nvlist_t *props, nvlist_t *opts,
+    nvlist_t **errlist)
 {
 	nvpair_t *elem;
 	nvlist_t *args;
@@ -345,6 +349,12 @@ lzc_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t **errlist)
 	nvlist_free(args);
 
 	return (error);
+}
+
+int
+lzc_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t **errlist)
+{
+	return (lzc_snapshot_ext(snaps, props, NULL, errlist));
 }
 
 /*
