@@ -236,7 +236,8 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	if (zhp->zfs_type != ZFS_TYPE_FILESYSTEM)
 		return (0);
 
-	ret = zfs_do_list_call(zhp, ZFS_TYPE_FILESYSTEM, func, data);
+	ret = zfs_do_list_call(zhp, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
+	    func, data);
 
 	return ((ret < 0) ? ret : 0);
 }
