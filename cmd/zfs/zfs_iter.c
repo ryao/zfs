@@ -427,7 +427,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 				    (flags & ZFS_ITER_RECURSE) ? 0 : argtype);
 			}
 			if (zhp != NULL) {
-				ret = zfs_iter_generic(zfs_get_handle(zhp),
+				ret |= zfs_iter_generic(zfs_get_handle(zhp),
 				    zfs_get_name(zhp), argtype, 0,
 				    (limit_specified) ? limit : (flags &
 				    ZFS_ITER_RECURSE) ? -1 : 0,
@@ -445,7 +445,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 	 */
 	for (node = uu_avl_first(cb.cb_avl); node != NULL;
 	    node = uu_avl_next(cb.cb_avl, node))
-		ret = callback(node->zn_handle, data);
+		ret |= callback(node->zn_handle, data);
 
 	/*
 	 * Finally, clean up the AVL tree.
