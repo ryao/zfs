@@ -5729,7 +5729,11 @@ zfs_stable_ioc_promote(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl,
 		return (error);
 	}
 
-	dsl_dataset_name(origin, parentname);
+	/*
+	 * Here "parent" is a dataset whose snapshot is an origin
+	 * of the clone to be promoted (not the origin itself).
+	 */
+	dsl_dir_name(origin->ds_dir, parentname);
 	dsl_dataset_rele(origin, FTAG);
 	dsl_dataset_rele(clone, FTAG);
 	dsl_pool_rele(dp, FTAG);
