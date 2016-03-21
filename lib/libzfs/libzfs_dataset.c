@@ -3506,35 +3506,37 @@ zfs_promote(zfs_handle_t *zhp)
 	if (ret != 0) {
 		libzfs_handle_t *hdl = zhp->zfs_hdl;
 		char errbuf[1024];
-		char *conflsnap = "<internal error>";
-		char *parent = "<internal error>";
-
-		ASSERT(outnvl);
 
 		(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 		    "cannot promote '%s'"), zhp->zfs_name);
-		/*
-		 * We could use zhp->zfs_dmustats.dds_origin instead of getting
-		 * the parent from the kernel, but we get it from the kernel to
-		 * exercise the lzc_promote codepath. The same goes for relying
-		 * on the return value ENOTDIR to tell us about a snapshot
-		 * intead of using zhp->zfs_type == ZFS_TYPE_SNAPSHOT.
-		 */
-		(void) nvlist_lookup_string(outnvl, "conflsnap", &conflsnap);
-		(void) nvlist_lookup_string(outnvl, "parent", &parent);
 
 		switch (ret) {
 		case EEXIST:
+		{
 			/*
 			 * XXX: This is not unamibiguous. See the lzc_promote
 			 * man page.
 			 */
+			char *conflsnap = "<internal error>";
+			char *parent = "<internal error>";
+
+			ASSERT(outnvl);
+
+			/*
+			 * We could use zhp->zfs_dmustats.dds_origin instead of getting
+			 * the parent from the kernel, but we get it from the kernel to
+			 * exercise the lzc_promote codepath. The same goes for relying
+			 * on the return value ENOTDIR to tell us about a snapshot
+			 * intead of using zhp->zfs_type == ZFS_TYPE_SNAPSHOT.
+			 */
+			(void) nvlist_lookup_string(outnvl, "conflsnap", &conflsnap);
+			(void) nvlist_lookup_string(outnvl, "parent", &parent);
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "conflicting snapshot '%s' from parent '%s'"),
 			    conflsnap, parent);
 			ret = zfs_error(hdl, EZFS_EXISTS, errbuf);
 			break;
-
+		}
 		case ENOTDIR:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "snapshots can not be promoted"));
