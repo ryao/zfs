@@ -3305,6 +3305,10 @@ zfs_fill_zplprops_impl(objset_t *os, uint64_t zplver,
     boolean_t fuids_ok, boolean_t sa_ok, nvlist_t *createprops,
     nvlist_t *zplprops, boolean_t *is_ci)
 {
+	char *zplver_str = NULL;
+	char *sense_str = NULL;
+	char *norm_str = NULL;
+	char *u8_str = NULL;
 	uint64_t sense = ZFS_PROP_UNDEFINED;
 	uint64_t norm = ZFS_PROP_UNDEFINED;
 	uint64_t u8 = ZFS_PROP_UNDEFINED;
@@ -3316,20 +3320,37 @@ zfs_fill_zplprops_impl(objset_t *os, uint64_t zplver,
 	 * Pull out creator prop choices, if any.
 	 */
 	if (createprops) {
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_VERSION), &zplver);
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_NORMALIZE), &norm);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_VERSION), &zplver_str);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_NORMALIZE), &norm_str);
 		(void) nvlist_remove_all(createprops,
 		    zfs_prop_to_name(ZFS_PROP_NORMALIZE));
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_UTF8ONLY), &u8);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_UTF8ONLY), &u8_str);
 		(void) nvlist_remove_all(createprops,
 		    zfs_prop_to_name(ZFS_PROP_UTF8ONLY));
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_CASE), &sense);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_CASE), &sense_str);
 		(void) nvlist_remove_all(createprops,
 		    zfs_prop_to_name(ZFS_PROP_CASE));
+
+		if (zplver_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_VERSION,
+			    zplver_str, &zplver);
+		}
+		if (norm_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_NORMALIZE,
+			    norm_str, &norm);
+		}
+		if (u8_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_UTF8ONLY,
+			    u8_str, &u8);
+		}
+		if (sense_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_CASE,
+			    sense_str, &sense);
+		}
 	}
 
 	/*
