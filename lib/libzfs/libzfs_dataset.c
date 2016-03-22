@@ -3314,8 +3314,8 @@ zfs_destroy(zfs_handle_t *zhp, boolean_t defer)
 	if (defer)
 		fnvlist_free(opts);
 
-	if (ret != 0 && errno != ENOENT) {
-		return (zfs_standard_error_fmt(zhp->zfs_hdl, errno,
+	if (ret != 0 && ret != ENOENT) {
+		return (zfs_standard_error_fmt(zhp->zfs_hdl, ret,
 		    dgettext(TEXT_DOMAIN, "cannot destroy '%s'"),
 		    zhp->zfs_name));
 	}
