@@ -2700,9 +2700,15 @@ zfs_set_prop_nvlist(const char *dsname, zprop_source_t source, nvlist_t *nvl,
 	int rv = 0;
 	uint64_t intval;
 	char *strval;
-
+	int prop_count;
 	nvlist_t *genericnvl = fnvlist_alloc();
 	nvlist_t *retrynvl = fnvlist_alloc();
+
+	pair = NULL;
+	prop_count = 0;
+	while ((pair = nvlist_next_nvpair(nvl, pair)) != NULL)
+		prop_count++;
+
 retry:
 	pair = NULL;
 	while ((pair = nvlist_next_nvpair(nvl, pair)) != NULL) {
@@ -2790,7 +2796,7 @@ retry:
 			if (prop != ZPROP_INVAL ||
 			    zfs_prop_userquota(propname) == B_FALSE)
 				break;
-			if (atomic == B_TRUE)
+			if (atomic == B_TRUE && prop_count > 1)
 				err = SET_ERROR(ENOTSUP);
 		}
 
