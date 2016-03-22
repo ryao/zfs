@@ -2845,7 +2845,7 @@ retry:
 		 * to set as many properties as we can, so try setting them
 		 * individually.
 		 */
-		if (atomic == B_FALSE) {
+		if (err != 0 && atomic == B_FALSE) {
 			pair = NULL;
 			while ((pair = nvlist_next_nvpair(genericnvl, pair)) !=
 			    NULL) {
