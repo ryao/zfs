@@ -212,8 +212,10 @@ zfs_do_list_call(zfs_handle_t *zhp, zfs_type_t type, zfs_iter_f func,
 	switch (rc) {
 	/*
 	 * An rc value of 0 indicates normal completion.
+	 * Treat a missing dataset as a dataset with no relevant children.
 	 */
 	case 0:
+	case ENOENT:
 		rc = 1;
 		break;
 	default:
