@@ -212,8 +212,10 @@ zfs_do_list_call(zfs_handle_t *zhp, zfs_type_t type, zfs_iter_f func,
 	switch (rc) {
 	/*
 	 * An rc value of 0 indicates normal completion.
+	 * Treat a missing dataset as a dataset with no relevant children.
 	 */
 	case 0:
+	case ENOENT:
 		rc = 1;
 		break;
 	default:
@@ -236,7 +238,8 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	if (zhp->zfs_type != ZFS_TYPE_FILESYSTEM)
 		return (0);
 
-	ret = zfs_do_list_call(zhp, ZFS_TYPE_FILESYSTEM, func, data);
+	ret = zfs_do_list_call(zhp, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
+	    func, data);
 
 	return ((ret < 0) ? ret : 0);
 }

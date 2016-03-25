@@ -1783,9 +1783,6 @@ zfs_do_get(int argc, char **argv)
 
 	cb.cb_first = B_TRUE;
 
-	if (argc > 0 && (flags & ZFS_ITER_RECURSE) == 0)
-		flags |= ZFS_ITER_DEPTH_LIMIT;
-
 	/* run for each object */
 	ret = zfs_for_each(argc, argv, flags, types, NULL,
 	    &cb.cb_proplist, limit, get_callback, &cb);
@@ -3153,8 +3150,10 @@ zfs_do_list(int argc, char **argv)
 
 	cb.cb_first = B_TRUE;
 
-	if (argc > 0 && (flags & ZFS_ITER_RECURSE) == 0)
-		flags |= ZFS_ITER_DEPTH_LIMIT;
+	/* -d <depth> trumps -r. */
+	if ((flags & (ZFS_ITER_RECURSE | ZFS_ITER_DEPTH_LIMIT)) ==
+	    (ZFS_ITER_RECURSE | ZFS_ITER_DEPTH_LIMIT))
+		flags &= ~ZFS_ITER_RECURSE;
 
 	ret = zfs_for_each(argc, argv, flags, types, sortcol, &cb.cb_proplist,
 	    limit, list_callback, &cb);

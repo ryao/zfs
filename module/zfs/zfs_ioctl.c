@@ -2710,9 +2710,15 @@ zfs_set_prop_nvlist(const char *dsname, zprop_source_t source, nvlist_t *nvl,
 	int rv = 0;
 	uint64_t intval;
 	char *strval;
-
+	int prop_count;
 	nvlist_t *genericnvl = fnvlist_alloc();
 	nvlist_t *retrynvl = fnvlist_alloc();
+
+	pair = NULL;
+	prop_count = 0;
+	while ((pair = nvlist_next_nvpair(nvl, pair)) != NULL)
+		prop_count++;
+
 retry:
 	pair = NULL;
 	while ((pair = nvlist_next_nvpair(nvl, pair)) != NULL) {
@@ -2800,7 +2806,7 @@ retry:
 			if (prop != ZPROP_INVAL ||
 			    zfs_prop_userquota(propname) == B_FALSE)
 				break;
-			if (atomic == B_TRUE)
+			if (atomic == B_TRUE && prop_count > 1)
 				err = SET_ERROR(ENOTSUP);
 		}
 
@@ -2855,7 +2861,7 @@ retry:
 		 * to set as many properties as we can, so try setting them
 		 * individually.
 		 */
-		if (atomic == B_FALSE) {
+		if (err != 0 && atomic == B_FALSE) {
 			pair = NULL;
 			while ((pair = nvlist_next_nvpair(genericnvl, pair)) !=
 			    NULL) {
@@ -3305,6 +3311,10 @@ zfs_fill_zplprops_impl(objset_t *os, uint64_t zplver,
     boolean_t fuids_ok, boolean_t sa_ok, nvlist_t *createprops,
     nvlist_t *zplprops, boolean_t *is_ci)
 {
+	char *zplver_str = NULL;
+	char *sense_str = NULL;
+	char *norm_str = NULL;
+	char *u8_str = NULL;
 	uint64_t sense = ZFS_PROP_UNDEFINED;
 	uint64_t norm = ZFS_PROP_UNDEFINED;
 	uint64_t u8 = ZFS_PROP_UNDEFINED;
@@ -3316,20 +3326,37 @@ zfs_fill_zplprops_impl(objset_t *os, uint64_t zplver,
 	 * Pull out creator prop choices, if any.
 	 */
 	if (createprops) {
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_VERSION), &zplver);
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_NORMALIZE), &norm);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_VERSION), &zplver_str);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_NORMALIZE), &norm_str);
 		(void) nvlist_remove_all(createprops,
 		    zfs_prop_to_name(ZFS_PROP_NORMALIZE));
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_UTF8ONLY), &u8);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_UTF8ONLY), &u8_str);
 		(void) nvlist_remove_all(createprops,
 		    zfs_prop_to_name(ZFS_PROP_UTF8ONLY));
-		(void) nvlist_lookup_uint64(createprops,
-		    zfs_prop_to_name(ZFS_PROP_CASE), &sense);
+		(void) nvlist_lookup_string(createprops,
+		    zfs_prop_to_name(ZFS_PROP_CASE), &sense_str);
 		(void) nvlist_remove_all(createprops,
 		    zfs_prop_to_name(ZFS_PROP_CASE));
+
+		if (zplver_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_VERSION,
+			    zplver_str, &zplver);
+		}
+		if (norm_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_NORMALIZE,
+			    norm_str, &norm);
+		}
+		if (u8_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_UTF8ONLY,
+			    u8_str, &u8);
+		}
+		if (sense_str != NULL) {
+			(void) zfs_prop_string_to_index(ZFS_PROP_CASE,
+			    sense_str, &sense);
+		}
 	}
 
 	/*
@@ -5742,7 +5769,11 @@ zfs_stable_ioc_promote(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl,
 		return (error);
 	}
 
-	dsl_dataset_name(origin, parentname);
+	/*
+	 * Here "parent" is a dataset whose snapshot is an origin
+	 * of the clone to be promoted (not the origin itself).
+	 */
+	dsl_dir_name(origin->ds_dir, parentname);
 	dsl_dataset_rele(origin, FTAG);
 	dsl_dataset_rele(clone, FTAG);
 	dsl_pool_rele(dp, FTAG);

@@ -334,6 +334,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 	zfs_node_t *node;
 	uu_avl_walk_t *walk;
 	zfs_type_t argtype;
+	zfs_type_t opentype;
 	boolean_t limit_specified = !!(flags & ZFS_ITER_DEPTH_LIMIT);
 
 	avl_pool = uu_avl_pool_create("zfs_pool", sizeof (zfs_node_t),
@@ -396,6 +397,9 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 	 * zfs_iter_generic() lets the kernel worry about default types.
 	 */
 	argtype = types * !!(flags & ZFS_ITER_TYPES_SPECIFIED);
+	opentype = argtype;
+	if ((flags & ZFS_ITER_RECURSE) != 0 || limit_specified)
+		opentype |= ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME;
 	if (argc == 0) {
 		/*
 		 * If given no arguments, iterate over all datasets.
@@ -421,13 +425,13 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 
 			if (flags & ZFS_ITER_ARGS_CAN_BE_PATHS) {
 				zhp = zfs_path_to_zhandle(g_zfs, argv[i],
-				    (flags & ZFS_ITER_RECURSE) ? 0 : argtype);
+				    opentype);
 			} else {
 				zhp = zfs_open(g_zfs, argv[i],
-				    (flags & ZFS_ITER_RECURSE) ? 0 : argtype);
+				    opentype);
 			}
 			if (zhp != NULL) {
-				ret = zfs_iter_generic(zfs_get_handle(zhp),
+				ret |= zfs_iter_generic(zfs_get_handle(zhp),
 				    zfs_get_name(zhp), argtype, 0,
 				    (limit_specified) ? limit : (flags &
 				    ZFS_ITER_RECURSE) ? -1 : 0,
@@ -445,7 +449,7 @@ zfs_for_each(int argc, char **argv, int flags, zfs_type_t types,
 	 */
 	for (node = uu_avl_first(cb.cb_avl); node != NULL;
 	    node = uu_avl_next(cb.cb_avl, node))
-		ret = callback(node->zn_handle, data);
+		ret |= callback(node->zn_handle, data);
 
 	/*
 	 * Finally, clean up the AVL tree.
