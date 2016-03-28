@@ -1322,7 +1322,7 @@ zfs_do_destroy(int argc, char **argv)
 			rv = 1;
 	} else if (pound != NULL) {
 		int err;
-		nvlist_t *nvl;
+		nvlist_t *nvl, *opts;
 
 		if (cb.cb_dryrun) {
 			(void) fprintf(stderr,
@@ -1351,13 +1351,19 @@ zfs_do_destroy(int argc, char **argv)
 		nvl = fnvlist_alloc();
 		fnvlist_add_boolean(nvl, argv[0]);
 
-		err = lzc_destroy_bookmarks(nvl, NULL);
+		opts = fnvlist_alloc();
+		if (log_history)
+			fnvlist_add_string(opts, "log_history", history_str);
+
+		err = lzc_destroy_bookmarks_ext(nvl, opts, NULL);
 		if (err != 0) {
 			(void) zfs_standard_error(g_zfs, err,
 			    "cannot destroy bookmark");
-		}
+		} else
+			log_history = B_FALSE;
 
 		nvlist_free(cb.cb_nvl);
+		fnvlist_free(opts);
 
 		return (err);
 	} else {
