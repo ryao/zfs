@@ -504,6 +504,22 @@ lzc_exists(const char *dataset)
  * (name = snapshot), with its value being the error code (int32).
  */
 int
+lzc_hold_ext(nvlist_t *holds, nvlist_t *opts, nvlist_t **errlist)
+{
+	char pool[MAXNAMELEN];
+	nvpair_t *elem;
+
+	/* determine the pool name */
+	elem = nvlist_next_nvpair(holds, NULL);
+	if (elem == NULL)
+		return (0);
+	(void) strlcpy(pool, nvpair_name(elem), sizeof (pool));
+	pool[strcspn(pool, "/@")] = '\0';
+
+	return (lzc_ioctl("zfs_hold", pool, holds, opts, errlist, 1));
+}
+
+int
 lzc_hold(nvlist_t *holds, int cleanup_fd, nvlist_t **errlist)
 {
 	char pool[MAXNAMELEN];
@@ -527,7 +543,6 @@ lzc_hold(nvlist_t *holds, int cleanup_fd, nvlist_t **errlist)
 	nvlist_free(args);
 	return (error);
 }
-
 /*
  * Release "user holds" on snapshots.  If the snapshot has been marked for
  * deferred destroy (by lzc_destroy_snaps(defer=B_TRUE)), it does not have

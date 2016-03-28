@@ -71,6 +71,7 @@ int lzc_destroy_bookmarks(nvlist_t *, nvlist_t **);
 int lzc_snaprange_space(const char *, const char *, uint64_t *);
 
 int lzc_hold(nvlist_t *, int, nvlist_t **);
+int lzc_hold_ext(nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_release(nvlist_t *, nvlist_t **);
 int lzc_get_holds(const char *, nvlist_t **);
 

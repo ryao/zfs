@@ -5312,6 +5312,35 @@ zfs_ioc_smb_acl(zfs_cmd_t *zc)
 #endif /* HAVE_SMB_SHARE */
 }
 
+static int
+zfs_stable_ioc_zfs_hold(const char *poolname, nvlist_t *innvl,
+    nvlist_t *outnvl, nvlist_t *opts, uint64_t version)
+{
+	nvlist_t *holds;
+	int cleanup_fd = -1;
+	int error;
+	minor_t minor = 0;
+
+	if (version == 0) {
+		opts = innvl;
+		error = nvlist_lookup_nvlist(innvl, "holds", &holds);
+		if (error != 0)
+			return (SET_ERROR(EINVAL));
+	} else {
+		holds = innvl;
+	}
+
+	if (nvlist_lookup_int32(opts, "cleanup_fd", &cleanup_fd) == 0) {
+		error = zfs_onexit_fd_hold(cleanup_fd, &minor);
+		if (error != 0)
+			return (error);
+	}
+
+	error = dsl_dataset_user_hold(holds, minor, outnvl);
+	if (minor != 0)
+		zfs_onexit_fd_rele(cleanup_fd);
+	return (error);
+}
 /*
  * innvl: {
  *     "holds" -> { snapname -> holdname (string), ... }
@@ -5327,25 +5356,7 @@ zfs_ioc_smb_acl(zfs_cmd_t *zc)
 static int
 zfs_ioc_hold(const char *pool, nvlist_t *args, nvlist_t *errlist)
 {
-	nvlist_t *holds;
-	int cleanup_fd = -1;
-	int error;
-	minor_t minor = 0;
-
-	error = nvlist_lookup_nvlist(args, "holds", &holds);
-	if (error != 0)
-		return (SET_ERROR(EINVAL));
-
-	if (nvlist_lookup_int32(args, "cleanup_fd", &cleanup_fd) == 0) {
-		error = zfs_onexit_fd_hold(cleanup_fd, &minor);
-		if (error != 0)
-			return (error);
-	}
-
-	error = dsl_dataset_user_hold(holds, minor, errlist);
-	if (minor != 0)
-		zfs_onexit_fd_rele(cleanup_fd);
-	return (error);
+	return (zfs_stable_ioc_zfs_hold(pool, args, errlist, NULL, 0));
 }
 
 /*
@@ -5913,7 +5924,6 @@ LIBZFS_CORE_WRAPPER_FUNC(space_snaps)
 LIBZFS_CORE_WRAPPER_FUNC_2NAME(send_new, send)
 LIBZFS_CORE_WRAPPER_FUNC(send_space)
 LIBZFS_CORE_WRAPPER_FUNC(clone)
-LIBZFS_CORE_WRAPPER_FUNC(hold)
 LIBZFS_CORE_WRAPPER_FUNC(release)
 LIBZFS_CORE_WRAPPER_FUNC(get_holds)
 LIBZFS_CORE_WRAPPER_FUNC(rollback)
@@ -6691,6 +6701,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_TRUE,
 	.zvec_allow_log		= B_TRUE,
+	.zvec_max_version	= 1,
 },
 {	.zvec_name		= "zfs_release",
 	.zvec_func		= zfs_stable_ioc_zfs_release,

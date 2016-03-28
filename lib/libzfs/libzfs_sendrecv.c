@@ -1618,7 +1618,8 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 			goto err_out;
 
 		if (sdd.snapholds != NULL) {
-			err = zfs_hold_nvl(zhp, sdd.cleanup_fd, sdd.snapholds);
+			err = zfs_hold_nvl(zhp, sdd.cleanup_fd, sdd.snapholds,
+			    NULL);
 			if (err != 0)
 				goto stderr_out;
 
