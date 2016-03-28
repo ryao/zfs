@@ -566,7 +566,7 @@ lzc_hold(nvlist_t *holds, int cleanup_fd, nvlist_t **errlist)
  * to release.
  */
 int
-lzc_release(nvlist_t *holds, nvlist_t **errlist)
+lzc_release_ext(nvlist_t *holds, nvlist_t *opts, nvlist_t **errlist)
 {
 	char pool[MAXNAMELEN];
 	nvpair_t *elem;
@@ -578,7 +578,11 @@ lzc_release(nvlist_t *holds, nvlist_t **errlist)
 	(void) strlcpy(pool, nvpair_name(elem), sizeof (pool));
 	pool[strcspn(pool, "/@")] = '\0';
 
-	return (lzc_ioctl("zfs_release", pool, holds, NULL, errlist, 0));
+	return (lzc_ioctl("zfs_release", pool, holds, opts, errlist, 0));
+}int
+lzc_release(nvlist_t *holds, nvlist_t **errlist)
+{
+	return (lzc_release_ext(holds, NULL, errlist));
 }
 
 /*

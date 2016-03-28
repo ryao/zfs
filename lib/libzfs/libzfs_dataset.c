@@ -4509,11 +4509,12 @@ zfs_release_one(zfs_handle_t *zhp, void *arg)
 
 int
 zfs_release(zfs_handle_t *zhp, const char *snapname, const char *tag,
-    boolean_t recursive)
+    boolean_t recursive, const char *log_history)
 {
 	int ret;
 	struct holdarg ha;
 	nvlist_t *errors = NULL;
+	nvlist_t *opts;
 	nvpair_t *elem;
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	char errbuf[1024];
@@ -4540,7 +4541,9 @@ zfs_release(zfs_handle_t *zhp, const char *snapname, const char *tag,
 		return (ret);
 	}
 
-	ret = lzc_release(ha.nvl, &errors);
+	opts = fnvlist_alloc();
+	ret = lzc_release_ext(ha.nvl, opts, &errors);
+	fnvlist_free(opts);
 	fnvlist_free(ha.nvl);
 
 	if (ret == 0) {
