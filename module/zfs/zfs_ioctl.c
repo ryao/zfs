@@ -6723,7 +6723,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 	.zvec_namecheck		= NO_NAME,
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED,
 	.zvec_smush_outnvlist	= B_FALSE,
-	.zvec_allow_log		= B_TRUE,
+	.zvec_allow_log		= B_FALSE,
 },
 {	.zvec_name		= "zfs_rename",
 	.zvec_func		= zfs_stable_ioc_zfs_rename,
