@@ -3470,7 +3470,8 @@ zfs_do_rollback(int argc, char **argv)
 	/*
 	 * Rollback parent to the given snapshot.
 	 */
-	ret = zfs_rollback(zhp, snap, force);
+	ret = zfs_rollback(zhp, snap, force, (log_history) ? history_str :
+	    NULL);
 
 out:
 	zfs_close(snap);

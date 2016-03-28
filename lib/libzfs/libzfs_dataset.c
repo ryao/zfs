@@ -3768,6 +3768,7 @@ typedef struct rollback_data {
 	uint64_t	cb_create;		/* creation time reference */
 	boolean_t	cb_error;
 	boolean_t	cb_force;
+	const char	*cb_log_history;
 } rollback_data_t;
 
 static int
@@ -3784,10 +3785,12 @@ rollback_destroy_dependent(zfs_handle_t *zhp, void *data)
 		zfs_close(zhp);
 		return (0);
 	}
-	if (zfs_destroy(zhp, B_FALSE, NULL) != 0)
+	if (zfs_destroy(zhp, B_FALSE, cbp->cb_log_history) != 0)
 		cbp->cb_error = B_TRUE;
-	else
+	else {
 		changelist_remove(clp, zhp->zfs_name);
+		cbp->cb_log_history = NULL;
+	}
 	(void) changelist_postfix(clp);
 	changelist_free(clp);
 
@@ -3801,10 +3804,18 @@ rollback_destroy(zfs_handle_t *zhp, void *data)
 	rollback_data_t *cbp = data;
 
 	if (zfs_prop_get_int(zhp, ZFS_PROP_CREATETXG) > cbp->cb_create) {
-		cbp->cb_error |= zfs_iter_dependents(zhp, B_FALSE,
+		boolean_t error = zfs_iter_dependents(zhp, B_FALSE,
 		    rollback_destroy_dependent, cbp);
 
-		cbp->cb_error |= zfs_destroy(zhp, B_FALSE, NULL);
+		if (!error)
+			cbp->cb_log_history = NULL;
+		cbp->cb_error |= error;
+
+		cbp->cb_error |= zfs_destroy(zhp, B_FALSE, cbp->cb_log_history);
+
+		if (!error)
+			cbp->cb_log_history = NULL;
+		cbp->cb_error |= error;
 	}
 
 	zfs_close(zhp);
@@ -3819,9 +3830,11 @@ rollback_destroy(zfs_handle_t *zhp, void *data)
  * destroyed, along with their dependents (i.e. clones).
  */
 int
-zfs_rollback(zfs_handle_t *zhp, zfs_handle_t *snap, boolean_t force)
+zfs_rollback(zfs_handle_t *zhp, zfs_handle_t *snap, boolean_t force,
+    const char *log_history)
 {
 	rollback_data_t cb = { 0 };
+	nvlist_t *opts;
 	int err;
 	boolean_t restore_resv = 0;
 	uint64_t old_volsize = 0, new_volsize;
@@ -3836,6 +3849,7 @@ zfs_rollback(zfs_handle_t *zhp, zfs_handle_t *snap, boolean_t force)
 	cb.cb_force = force;
 	cb.cb_target = snap->zfs_name;
 	cb.cb_create = zfs_prop_get_int(snap, ZFS_PROP_CREATETXG);
+	cb.cb_log_history = log_history;
 	(void) zfs_iter_snapshots(zhp, B_FALSE, rollback_destroy, &cb);
 	(void) zfs_iter_bookmarks(zhp, rollback_destroy, &cb);
 
@@ -3862,7 +3876,11 @@ zfs_rollback(zfs_handle_t *zhp, zfs_handle_t *snap, boolean_t force)
 	 * an unlikely race condition where the user has taken a
 	 * snapshot since we verified that this was the most recent.
 	 */
-	err = lzc_rollback(zhp->zfs_name, NULL, 0);
+	opts = fnvlist_alloc();
+	if (cb.cb_log_history)
+		fnvlist_add_string(opts, "log_history", cb.cb_log_history);
+	err = lzc_rollback_ext(zhp->zfs_name, NULL, 0, opts);
+	fnvlist_free(opts);
 	if (err != 0) {
 		(void) zfs_standard_error_fmt(zhp->zfs_hdl, errno,
 		    dgettext(TEXT_DOMAIN, "cannot rollback '%s'"),

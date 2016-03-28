@@ -854,20 +854,27 @@ lzc_receive_with_header(const char *snapname, nvlist_t *props,
  * Return 0 on success or an errno on failure.
  */
 int
-lzc_rollback(const char *fsname, char *snapnamebuf, int snapnamelen)
+lzc_rollback_ext(const char *fsname, char *snapnamebuf, int snapnamelen,
+    nvlist_t *opts)
 {
 	nvlist_t *args;
 	nvlist_t *result;
 	int err;
 
 	args = fnvlist_alloc();
-	err = lzc_ioctl("zfs_rollback", fsname, args, NULL, &result, 0);
+	err = lzc_ioctl("zfs_rollback", fsname, args, opts, &result, 0);
 	nvlist_free(args);
 	if (err == 0 && snapnamebuf != NULL) {
 		const char *snapname = fnvlist_lookup_string(result, "target");
 		(void) strlcpy(snapnamebuf, snapname, snapnamelen);
 	}
 	return (err);
+}
+
+int
+lzc_rollback(const char *fsname, char *snapnamebuf, int snapnamelen)
+{
+	return (lzc_rollback_ext(fsname, snapnamebuf, snapnamelen, NULL));
 }
 
 /*
