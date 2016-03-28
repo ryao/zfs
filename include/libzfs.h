@@ -645,8 +645,8 @@ extern int zfs_send_one(zfs_handle_t *, const char *, int, enum lzc_send_flags);
 
 extern int zfs_promote(zfs_handle_t *, const char *);
 extern int zfs_hold(zfs_handle_t *, const char *, const char *,
-    boolean_t, int);
-extern int zfs_hold_nvl(zfs_handle_t *, int, nvlist_t *);
+    boolean_t, int, const char *);
+extern int zfs_hold_nvl(zfs_handle_t *, int, nvlist_t *, const char *);
 extern int zfs_release(zfs_handle_t *, const char *, const char *, boolean_t);
 extern int zfs_get_holds(zfs_handle_t *, nvlist_t **);
 extern uint64_t zvol_volsize_to_reservation(uint64_t, nvlist_t *);

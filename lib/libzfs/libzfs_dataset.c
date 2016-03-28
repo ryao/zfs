@@ -4374,7 +4374,7 @@ zfs_hold_one(zfs_handle_t *zhp, void *arg)
 
 int
 zfs_hold(zfs_handle_t *zhp, const char *snapname, const char *tag,
-    boolean_t recursive, int cleanup_fd)
+    boolean_t recursive, int cleanup_fd, const char *log_history)
 {
 	int ret;
 	struct holdarg ha;
@@ -4398,23 +4398,30 @@ zfs_hold(zfs_handle_t *zhp, const char *snapname, const char *tag,
 		return (ret);
 	}
 
-	ret = zfs_hold_nvl(zhp, cleanup_fd, ha.nvl);
+	ret = zfs_hold_nvl(zhp, cleanup_fd, ha.nvl, log_history);
 	fnvlist_free(ha.nvl);
 
 	return (ret);
 }
 
 int
-zfs_hold_nvl(zfs_handle_t *zhp, int cleanup_fd, nvlist_t *holds)
+zfs_hold_nvl(zfs_handle_t *zhp, int cleanup_fd, nvlist_t *holds,
+    const char *log_history)
 {
 	int ret;
 	nvlist_t *errors;
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	char errbuf[1024];
+	nvlist_t *opts = fnvlist_alloc();
 	nvpair_t *elem;
 
 	errors = NULL;
-	ret = lzc_hold(holds, cleanup_fd, &errors);
+	if (cleanup_fd != -1)
+		fnvlist_add_int32(opts, "cleanup_fd", cleanup_fd);
+	if (log_history != NULL)
+		fnvlist_add_string(opts, "log_history", log_history);
+	ret = lzc_hold_ext(holds, opts, &errors);
+	fnvlist_free(opts);
 
 	if (ret == 0) {
 		/* There may be errors even in the success case. */

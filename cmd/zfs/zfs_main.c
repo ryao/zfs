@@ -5349,8 +5349,11 @@ zfs_do_hold_rele_impl(int argc, char **argv, boolean_t holding)
 			continue;
 		}
 		if (holding) {
-			if (zfs_hold(zhp, delim+1, tag, recursive, -1) != 0)
+			if (zfs_hold(zhp, delim+1, tag, recursive, -1,
+			    (log_history) ? history_str : NULL) != 0)
 				++errors;
+			else
+				log_history = B_FALSE;
 		} else {
 			if (zfs_release(zhp, delim+1, tag, recursive) != 0)
 				++errors;
