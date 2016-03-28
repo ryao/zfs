@@ -6584,7 +6584,7 @@ zfs_do_bookmark(int argc, char **argv)
 {
 	char snapname[ZFS_MAXNAMELEN];
 	zfs_handle_t *zhp;
-	nvlist_t *nvl;
+	nvlist_t *nvl, *opts;
 	int ret = 0;
 	int c;
 
@@ -6636,9 +6636,13 @@ zfs_do_bookmark(int argc, char **argv)
 
 
 	nvl = fnvlist_alloc();
+	opts = fnvlist_alloc();
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", history_str);
 	fnvlist_add_string(nvl, argv[1], snapname);
-	ret = lzc_bookmark(nvl, NULL);
+	ret = lzc_bookmark_ext(nvl, opts, NULL);
 	fnvlist_free(nvl);
+	fnvlist_free(opts);
 
 	if (ret != 0) {
 		const char *err_msg;
@@ -6670,6 +6674,8 @@ zfs_do_bookmark(int argc, char **argv)
 		}
 		(void) fprintf(stderr, "%s: %s\n", errbuf,
 		    dgettext(TEXT_DOMAIN, err_msg));
+	} else {
+		log_history = B_FALSE;
 	}
 
 	return (ret != 0);

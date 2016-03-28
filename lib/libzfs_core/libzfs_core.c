@@ -891,7 +891,7 @@ lzc_rollback(const char *fsname, char *snapnamebuf, int snapnamelen)
  * be the errno of a (undetermined) bookmarks that failed.
  */
 int
-lzc_bookmark(nvlist_t *bookmarks, nvlist_t **errlist)
+lzc_bookmark_ext(nvlist_t *bookmarks, nvlist_t *opts, nvlist_t **errlist)
 {
 	nvpair_t *elem;
 	int error;
@@ -904,9 +904,15 @@ lzc_bookmark(nvlist_t *bookmarks, nvlist_t **errlist)
 	(void) strlcpy(pool, nvpair_name(elem), sizeof (pool));
 	pool[strcspn(pool, "/#")] = '\0';
 
-	error = lzc_ioctl("zfs_bookmark", pool, bookmarks, NULL, errlist, 0);
+	error = lzc_ioctl("zfs_bookmark", pool, bookmarks, opts, errlist, 0);
 
 	return (error);
+}
+
+int
+lzc_bookmark(nvlist_t *bookmarks, nvlist_t **errlist)
+{
+	return (lzc_bookmark_ext(bookmarks, NULL, errlist));
 }
 
 /*
