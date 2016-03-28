@@ -1767,8 +1767,8 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 	if (props)
 		fnvlist_add_nvlist(nv, "props", props);
 
+	opts = fnvlist_alloc();
 	if (flags) {
-		opts = fnvlist_alloc();
 		if (flags & ZFS_IMPORT_VERBATIM)
 			fnvlist_add_boolean(opts, "verbatim");
 
