@@ -959,7 +959,7 @@ lzc_get_bookmarks(const char *fsname, nvlist_t *props, nvlist_t **bmarks)
  * the (int32) error code.
  */
 int
-lzc_destroy_bookmarks(nvlist_t *bmarks, nvlist_t **errlist)
+lzc_destroy_bookmarks_ext(nvlist_t *bmarks, nvlist_t *opts, nvlist_t **errlist)
 {
 	nvpair_t *elem;
 	int error;
@@ -972,10 +972,16 @@ lzc_destroy_bookmarks(nvlist_t *bmarks, nvlist_t **errlist)
 	(void) strlcpy(pool, nvpair_name(elem), sizeof (pool));
 	pool[strcspn(pool, "/#")] = '\0';
 
-	error = lzc_ioctl("zfs_destroy_bookmarks", pool, bmarks, NULL, errlist,
+	error = lzc_ioctl("zfs_destroy_bookmarks", pool, bmarks, opts, errlist,
 	    0);
 
 	return (error);
+}
+
+int
+lzc_destroy_bookmarks(nvlist_t *bmarks, nvlist_t **errlist)
+{
+	return (lzc_destroy_bookmarks_ext(bmarks, NULL, errlist));
 }
 
 /*

@@ -68,6 +68,7 @@ int lzc_bookmark(nvlist_t *, nvlist_t **);
 int lzc_bookmark_ext(nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_get_bookmarks(const char *, nvlist_t *, nvlist_t **);
 int lzc_destroy_bookmarks(nvlist_t *, nvlist_t **);
+int lzc_destroy_bookmarks_ext(nvlist_t *, nvlist_t *opts, nvlist_t **);
 
 int lzc_snaprange_space(const char *, const char *, uint64_t *);
 

@@ -3317,9 +3317,13 @@ zfs_destroy(zfs_handle_t *zhp, boolean_t defer, const char *log_history)
 
 	if (zhp->zfs_type == ZFS_TYPE_BOOKMARK) {
 		nvlist_t *nv = fnvlist_alloc();
+		opts = fnvlist_alloc();
 		fnvlist_add_boolean(nv, zhp->zfs_name);
-		int error = lzc_destroy_bookmarks(nv, NULL);
+		if (log_history)
+			fnvlist_add_string(opts, "log_history", log_history);
+		int error = lzc_destroy_bookmarks_ext(nv, opts, NULL);
 		fnvlist_free(nv);
+		fnvlist_free(opts);
 		if (error != 0) {
 			return (zfs_standard_error_fmt(zhp->zfs_hdl, errno,
 			    dgettext(TEXT_DOMAIN, "cannot destroy '%s'"),
