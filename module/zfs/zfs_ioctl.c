@@ -863,29 +863,26 @@ zfs_secpolicy_destroy(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
  */
 /* ARGSUSED */
 static int
-zfs_secpolicy_destroy_snaps(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
+zfs_secpolicy_destroy_snaps_new(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
     cred_t *cr)
 {
-	nvlist_t *snaps;
 	nvpair_t *pair, *nextpair;
 	int error = 0;
 
-	if (nvlist_lookup_nvlist(innvl, "snaps", &snaps) != 0)
-		return (SET_ERROR(EINVAL));
-	for (pair = nvlist_next_nvpair(snaps, NULL); pair != NULL;
+	for (pair = nvlist_next_nvpair(innvl, NULL); pair != NULL;
 	    pair = nextpair) {
-		nextpair = nvlist_next_nvpair(snaps, pair);
+		nextpair = nvlist_next_nvpair(innvl, pair);
 		error = zfs_secpolicy_destroy_perms(nvpair_name(pair), cr);
 		if (error == ENOENT) {
 			/*
-			 * Ignore any snapshots that don't exist (we consider
+			 * Ignore any innvlhots that don't exist (we consider
 			 * them "already destroyed").  Remove the name from the
-			 * nvl here in case the snapshot is created between
+			 * nvl here in case the innvlhot is created between
 			 * now and when we try to destroy it (in which case
 			 * we don't want to destroy it since we haven't
 			 * checked for permission).
 			 */
-			fnvlist_remove_nvpair(snaps, pair);
+			fnvlist_remove_nvpair(innvl, pair);
 			error = 0;
 		}
 		if (error != 0)
@@ -893,6 +890,18 @@ zfs_secpolicy_destroy_snaps(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
 	}
 
 	return (error);
+}
+
+/* ARGSUSED */
+static int
+zfs_secpolicy_destroy_snaps(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
+    cred_t *cr)
+{
+	nvlist_t *snaps;
+	if (nvlist_lookup_nvlist(innvl, "snaps", &snaps) != 0)
+		return (SET_ERROR(EINVAL));
+
+	return (zfs_secpolicy_destroy_snaps_new(zc, snaps, opts, cr));
 }
 
 int
@@ -6687,7 +6696,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 },
 {	.zvec_name		= "zfs_destroy_snaps",
 	.zvec_func		= zfs_stable_ioc_zfs_destroy_snaps,
-	.zvec_secpolicy		= zfs_secpolicy_destroy_snaps,
+	.zvec_secpolicy		= zfs_secpolicy_destroy_snaps_new,
 	.zvec_namecheck		= POOL_NAME,
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_TRUE,
