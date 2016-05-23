@@ -1311,7 +1311,7 @@ zfs_do_destroy(int argc, char **argv)
 			}
 			if (err == 0) {
 				err = zfs_destroy_snaps_nvl(g_zfs, cb.cb_nvl,
-				    cb.cb_defer_destroy, NULL);
+				    cb.cb_defer_destroy, cb.cb_log_history);
 				if (err == 0) {
 					cb.cb_log_history = NULL;
 					log_history = B_FALSE;
