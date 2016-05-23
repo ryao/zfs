@@ -3432,7 +3432,7 @@ zfs_destroy_snaps_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, boolean_t defer,
 
 	fnvlist_free(opts);
 
-	if (nvlist_empty(errlist)) {
+	if (!nvlist_empty(errlist)) {
 		char errbuf[1024];
 		(void) snprintf(errbuf, sizeof (errbuf),
 		    dgettext(TEXT_DOMAIN, "cannot destroy snapshots"));
