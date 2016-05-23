@@ -345,7 +345,7 @@ lzc_snapshot_ext(nvlist_t *snaps, nvlist_t *props, nvlist_t *opts,
 	if (props != NULL)
 		fnvlist_add_nvlist(args, "props", props);
 
-	error = lzc_ioctl("zfs_snapshot", pool, args, NULL, errlist, 0);
+	error = lzc_ioctl("zfs_snapshot", pool, args, opts, errlist, 0);
 	nvlist_free(args);
 
 	return (error);
