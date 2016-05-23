@@ -1028,11 +1028,12 @@ destroy_callback(zfs_handle_t *zhp, void *data)
 	} else {
 		int error = zfs_destroy_snaps_nvl(g_zfs,
 		    cb->cb_batchedsnaps, B_FALSE, cb->cb_log_history);
+
+		if (error == 0 && !nvlist_empty(cb->cb_batchedsnaps))
+			cb->cb_log_history = NULL;
+
 		fnvlist_free(cb->cb_batchedsnaps);
 		cb->cb_batchedsnaps = fnvlist_alloc();
-
-		if (error == 0)
-			cb->cb_log_history = NULL;
 
 		if (error != 0 ||
 		    zfs_unmount(zhp, NULL, cb->cb_force ? MS_FORCE : 0) != 0 ||
