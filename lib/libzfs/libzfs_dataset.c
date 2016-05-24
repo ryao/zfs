@@ -3916,7 +3916,7 @@ zfs_rollback(zfs_handle_t *zhp, zfs_handle_t *snap, boolean_t force,
  */
 int
 zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
-    boolean_t force_unmount)
+    boolean_t force_unmount, const char *log_history)
 {
 	int ret;
 	char *delim;
@@ -4046,10 +4046,13 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 			goto error;
 	}
 
-	if (recursive) {
-		opts = fnvlist_alloc();
+	opts = fnvlist_alloc();
+
+	if (recursive)
 		fnvlist_add_boolean(opts, "recursive");
-	}
+
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
 
 	if ((ret = lzc_rename(zhp->zfs_name, target, opts, &errname)) != 0) {
 		/*
@@ -4082,8 +4085,7 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 		}
 	}
 
-	if (recursive)
-		fnvlist_free(opts);
+	fnvlist_free(opts);
 error:
 	if (parentname) {
 		free(parentname);

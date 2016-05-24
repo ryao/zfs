@@ -3267,7 +3267,9 @@ zfs_do_rename(int argc, char **argv)
 		return (1);
 	}
 
-	ret = (zfs_rename(zhp, argv[1], recurse, force_unmount) != 0);
+	ret = (zfs_rename(zhp, argv[1], recurse, force_unmount, history_str) !=
+	    0);
+	log_history = B_FALSE;
 
 	zfs_close(zhp);
 	return (ret);
