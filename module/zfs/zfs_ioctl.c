@@ -1293,18 +1293,14 @@ zfs_secpolicy_userspace_upgrade(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
 
 /* ARGSUSED */
 static int
-zfs_secpolicy_hold(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts, cred_t *cr)
+zfs_secpolicy_hold_new(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts,
+    cred_t *cr)
 {
 	nvpair_t *pair;
-	nvlist_t *holds;
 	int error;
 
-	error = nvlist_lookup_nvlist(innvl, "holds", &holds);
-	if (error != 0)
-		return (SET_ERROR(EINVAL));
-
-	for (pair = nvlist_next_nvpair(holds, NULL); pair != NULL;
-	    pair = nvlist_next_nvpair(holds, pair)) {
+	for (pair = nvlist_next_nvpair(innvl, NULL); pair != NULL;
+	    pair = nvlist_next_nvpair(innvl, pair)) {
 		char fsname[MAXNAMELEN];
 		error = dmu_fsname(nvpair_name(pair), fsname);
 		if (error != 0)
@@ -1315,6 +1311,20 @@ zfs_secpolicy_hold(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts, cred_t *cr)
 			return (error);
 	}
 	return (0);
+}
+
+/* ARGSUSED */
+static int
+zfs_secpolicy_hold(zfs_cmd_t *zc, nvlist_t *innvl, nvlist_t *opts, cred_t *cr)
+{
+	nvlist_t *holds;
+	int error;
+
+	if ((error = nvlist_lookup_nvlist(innvl, "holds", &holds))) {
+		return (error);
+	}
+
+	return (zfs_secpolicy_hold_new(zc, holds, opts, cr));
 }
 
 /* ARGSUSED */
@@ -6705,7 +6715,7 @@ static const zfs_stable_ioc_vec_t zfs_stable_ioc_vec[] = {
 },
 {	.zvec_name		= "zfs_hold",
 	.zvec_func		= zfs_stable_ioc_zfs_hold,
-	.zvec_secpolicy		= zfs_secpolicy_hold,
+	.zvec_secpolicy		= zfs_secpolicy_hold_new,
 	.zvec_namecheck		= POOL_NAME,
 	.zvec_pool_check	= POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY,
 	.zvec_smush_outnvlist	= B_TRUE,
