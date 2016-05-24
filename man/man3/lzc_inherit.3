@@ -37,10 +37,10 @@ lzc_inherit \- Reset dataset property to default value
 
 .SH DESCRIPTION
 .LP
-The
-\fBlzc_inherit\fR()
-function shall atomically reset property \fIpropname\fR of dataset
-\fIfsname\fR.
+The \fBlzc_inherit\fR() function shall atomically reset property \fIpropname\fR
+of dataset \fIfsname\fR.  The \fIopts\fR nvlist permits changes to the command
+behavior. At present, it permits the command invocation to be passed by a
+string named "log_history".
 
 .SH RETURN VALUES
 .sp

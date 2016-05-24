@@ -31,9 +31,11 @@ This manual page is part of the OpenZFS Programmer's Manual.
 #include <libzfs_core.h>
 
 \fBint\fR \fBlzc_destroy_snaps\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBboolean_t\fR \fIdefer\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.sp
+\fBint\fR \fBlzc_destroy_snaps_ext\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 
 .SH NAME
-lzc_destroy_snaps \- Destroy snapshots
+lzc_destroy_snaps, lzc_destroy_snaps_ext \- Destroy snapshots
 
 .SH DESCRIPTION
 .LP
@@ -41,14 +43,31 @@ The \fBlzc_destroy_snaps\fR() function destroys snapshots specified via strings
 through the nvlist \fRsnaps\fR. They must all be in the same pool.
 .sp
 Snapshots that do not exist will be silently ignored.
-.sp
-If \fIdefer\fR is not set, and a snapshot has user holds or clones, the
-destroy operation will fail and none of the snapshots will be
-destroyed.
-.sp
-If \fIdefer\fR is set, and a snapshot has user holds or clones, it will be
-marked for deferred destruction, and will be destroyed when the last hold
-or clone is removed/destroyed.
+
+.I snaps
+shall be a nvlist containing booleans whose keys are snapshot names.
+
+.I defer
+shall indicate whether a destroy operation on a snapshot that cannot be
+destroyed due to user holds and/or clones will be destroyed at a later date. If
+it is false, the destroy peration will fail and none of the snapshots will be
+destroyed. If it is true, and a snapshot has user holds or clones, it will be
+marked for deferred destruction, and will be destroyed when the last hold or
+clone is removed/destroyed.
+
+.I opts
+shall be either NULL or a pointer to a nvlist containing options that alter
+behavior. It supports "defer" as a boolean that is equivalent to the
+\fIdefer\fR argument of \fBlzc_destroy_snaps\fR. It also supports logging the
+command line invocation to the pool history log via a string named
+"log_history".
+
+.I errlist
+shall be either NULL or contain a handle that shall be used to store a pointer
+to a library allocated nvlist when non-NULL and the operation for at least one
+hold fails. The names of each snapshot that cannot be destroyed will be
+returned as keys of int32 values. The values are the error codes. It shall not
+be touched otherwise.
 
 .SH RETURN VALUES
 .sp

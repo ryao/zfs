@@ -199,12 +199,16 @@ lzc_ioctl(const char *cmd, const char *name, nvlist_t *source,
 int
 lzc_pool_configs(nvlist_t *opts, nvlist_t **configs)
 {
+	if (configs == NULL)
+		return (EINVAL);
 	return (lzc_ioctl("zpool_configs", NULL, NULL, opts, configs, 0));
 }
 
 int
 lzc_pool_getprops(const char *pool, nvlist_t *opts, nvlist_t **props)
 {
+	if (props == NULL)
+		return (EINVAL);
 	return (lzc_ioctl("zpool_getprops", pool, NULL, opts, props, 0));
 }
 

@@ -30,21 +30,29 @@ This manual page is part of the OpenZFS Programmer's Manual.
 .SH SYNOPSIS
 #include <libzfs_core.h>
 
-\fBint\fR \fBlzc_bookmark\fR(\fBnvlist_t *\fR\fIbookmarks\fR, \fBnvlist_t
-**\fR\fIerrlist\fR);
+\fBint\fR \fBlzc_bookmark\fR(\fBnvlist_t *\fR\fIbookmarks\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.sp
+\fBint\fR \fBlzc_bookmark_ext\fR(\fBnvlist_t *\fR\fIbookmarks\fR, \fInvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 
 .SH NAME
-lzc_bookmark \- Creates bookmarks from snapshot
+lzc_bookmark, lzc_bookmark_ext() \- Creates bookmarks from snapshot
 
 .SH DESCRIPTION
 .LP
-The \fBlibzfs_snapshot\fR() function creates atomic snapshots of all ZFS
-datasets and/or volumes named in the \fIsnaps\fR nvlist.
+The \fBlzc_snapshot\fR() function creates atomic snapshots of all ZFS datasets
+and/or volumes named in the \fIsnaps\fR nvlist. The \fBlzc_snapshot_ext\fR()
+function adds the \fIopts\fR nvlist for passing options.
 
 .I bookmarks
 shall be a nvlist containing strings whose keys are bookmark names and values
 are snapshot names to specify which bookmarks to create.  All bookmarks and
 snapshots must be inside the same pool.
+
+.I opts
+shall be either NULL or a pointer to a nvlist containing options that alter
+behavior. At present, it only permits the command invocation to be passed by a
+string named "log_history" so that the command line invocation can be stored in
+the zpool history log.
 
 .I errlist
 shall contain a handle that shall be used to store a pointer to a library
