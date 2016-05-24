@@ -33,11 +33,11 @@ This manual page is part of the OpenZFS Programmer's Manual.
 \fBint\fR \fBlzc_rename\fR(\fBconst char *\fR\fIoldname\fR, \fBchar *\fR\fInewname\fR, \fBnvlist_t *\fR\fIopts\fR, \fBchar **\fR\fIerrname\fR);
 
 .SH NAME
-lzc_rename \- Rollback this filesystem or volume to its most recent snapshot. 
+lzc_rename \- Rollback this filesystem or volume to its most recent snapshot.
 
 .SH DESCRIPTION
 .LP
-The \fBlibzfs_rename\fR() function will rename a dataset, volume or snapshot. 
+The \fBlzc_rename\fR() function will rename a dataset, volume or snapshot.
 
 For legacy purposes, it will make an attempt to unmount the dataset, volume or
 snapsot before a rename is done. To ensure atomicity, userland should unmount
@@ -51,9 +51,10 @@ shall be the new name of the dataset.
 
 .I opts
 shall be an nvlist_t that allows changes to the behavior. The only option
-accepted at this time is the boolean "recursive" key. That will rename
-snapshots of child datasets. This is intended to complement
-\fBlzc_snapshot\fR() when multiple snapshots are made with the same name.
+accepted at this time is the boolean "recursive" key. That will cause the
+kernel to umount all snapshots of children in the .zfs snapshot directory.
+This is intended to help handle collisions between \fBlzc_snapshot\fR() and
+\fBlzc_rename()\fR().
 
 .I errname
 shall be a pointer to a string pointer. It can be NULL. It is only used when an

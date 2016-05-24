@@ -31,13 +31,17 @@ This manual page is part of the OpenZFS Programmer's Manual.
 #include <libzfs_core.h>
 
 \fBint\fR \fBlzc_rollback\fR(\fBconst char *\fR\fIfsname\fR, \fBchar *\fR\fIsnapnamebuf\fR, \fBint\fR \fIsnapnamelen\fR);
+.sp
+\fBint\fR \fBlzc_rollback_ext\fR(\fBconst char *\fR\fIfsname\fR, \fBchar *\fR\fIsnapnamebuf\fR, \fBint\fR \fIsnapnamelen\fR, \fBnvlist_t *\fR\fIopts\fR);
 
 .SH NAME
-lzc_rollback \- Rollback this filesystem or volume to its most recent snapshot. 
+lzc_rollback, lzc_rollback_ext \- Rollback this filesystem or volume to its most recent snapshot. 
 
 .SH DESCRIPTION
 .LP
-The \fBlzc_rollback\fR() function rolls back a live dataset or volume to its most recent snapshot.
+The \fBlzc_rollback\fR() function rolls back a live dataset or volume to its
+most recent snapshot. The \fBlzc_rollback\fR() function behaves identically
+when \fIopts\fR is NULL.
 
 .I fsname
 shall be the name of the most recent snapshot to rollback.
@@ -48,6 +52,12 @@ snapshot. If NULL, it wll be ignored.
 
 .I snapnamelen
 shall be the length of \fIsnapnamebuf\fR.
+
+.I opts
+shall be either NULL or a pointer to a nvlist containing options that alter
+behavior. At present, it only permits the command invocation to be passed by a
+string named "log_history" so that the command line invocation can be stored in
+the zpool history log.
 
 .SH RETURN VALUES
 .sp

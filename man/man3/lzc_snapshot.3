@@ -32,14 +32,19 @@ This manual page is part of the OpenZFS Programmer's Manual.
 
 \fBint\fR \fBlzc_snapshot\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBnvlist_t
 *\fR\fIprops\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.sp
+\fBint\fR \fBlzc_snapshot_ext\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 
 .SH NAME
-lzc_snapshot \- Creates a snapshot of a dataset or volume
+lzc_snapshot, lzc_snapshot_ext \- Creates a snapshot of a dataset or volume
 
 .SH DESCRIPTION
 .LP
-The \fBlzc_snapshot\fR() function creates atomic snapshots of all ZFS
-datasets and/or volumes named in the \fIsnaps\fR nvlist.
+The \fBlzc_snapshot\fR() function creates atomic snapshots of all ZFS datasets
+and/or volumes named in the \fIsnaps\fR nvlist. Application of properties to
+the snapshot at this time is atomic. The \fIerrlist\fR will return individual
+error codes for properties that failed to be set. The \fBlzc_snapshot_ext\fR()
+function adds an \fIopts\fR nvlist to permit changes to the command behavior.
 
 .I snaps
 shall be a nvlist containing strings that specify the snapshots to create. All snapshot smust be inside the same pool.
@@ -51,12 +56,19 @@ the format:
 .sp
 { user:prop_name -> string value }
 
+.I opts
+shall be either NULL or a pointer to a nvlist containing options that alter
+behavior. At present, it only permits the command invocation to be passed by a
+string named "log_history" so that the command line invocation can be stored in
+the zpool history log.
+
 .I errlist
-shall contain a handle that shall be used to store a pointer to a library
-allocated nvlist when non-NULL and the operation for at least one hold fails.
-The names of the holds shall be the keys while the values shall contain the
-error codes and be of type int32. Holds that failed to release because they did
-not exist shall also have an entry added. It shall not be touched otherwise.
+shall be either NULL or contain a handle that shall be used to store a pointer
+to a library allocated nvlist when non-NULL and the operation for at least one
+hold fails.  The names of the holds shall be the keys while the values shall
+contain the error codes and be of type int32. Holds that failed to release
+because they did not exist shall also have an entry added. It shall not be
+touched otherwise.
 
 .SH RETURN VALUES
 .sp

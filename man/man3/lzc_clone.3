@@ -30,21 +30,52 @@ This manual page is part of the OpenZFS Programmer's Manual.
 .SH SYNOPSIS
 #include <libzfs_core.h>
 
-\fBint\fR \fBlzc_clone\fR(\fBconst char *\fR\fIfsname\fR, \fBconst char *\fR \fIorigin\fR, \fBnvlist_t *\fR\fIprops\fR);
+\fBint\fR \fBlzc_clone\fR(\fBconst char *\fR\fIfsname\fR, \fBconst char *\fR\fIorigin\fR, \fBnvlist_t *\fR\fIprops\fR);
+.sp
+\fBint\fR \fBlzc_clone_ext\fR(\fBconst char *\fR\fIfsname\fR, \fBconst char *\fR\fIorigin\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 
 .SH NAME
-lzc_clone \- Creates a clone from a snapshot
+lzc_clone, lzc_clone_ext \- Creates a clone from a snapshot
 
 .SH DESCRIPTION
 .LP
-The
-\fBlibzfs_clone\fR()
-function creates a ZFS dataset or volume named
+The \fBlzc_clone\fR() function creates a ZFS dataset or volume named
+\fIfsname\fR from the snapshot \fIorigin\fR Properties may optionally be set
+using \fIprops\fR. Application of properties to the clone at this time is
+non-atomic and failure of any property changes does not cause failure of the
+clone. The \fBlzc_clone_ext\fR() function behaves identically unless additional
+options are non-NULL. The \fIopts\fR nvlist permits changes to the command
+behavior. At present, it permits the command invocation to be passed by a
+string named "log_history". The \fIerrlist\fR will return individual error
+codes for properties that failed to be set.
+
 .I fsname
-from the snapshot
-.fs origin .
-Properties may optionally be set using
-.I props .
+shall be the SPA namespace name for the new clone. It must be inside the same pool as the snapshot from which it is created.
+
+.I origin
+shall be the SPA namespace name of the snapshot used as the starting
+point for the clone. It must be inside the same pool as the clone being
+created.
+
+.I props
+shall either be NULL or contain a nvlist with properties to set on the snapshot
+at creation time. It shall be of the format:
+.sp
+{ user:prop_name -> string value }
+
+.I opts
+shall be either NULL or a pointer to a nvlist containing options that alter
+behavior. At present, it only permits the command invocation to be passed by a
+string named "log_history" so that the command line invocation can be stored in
+the zpool history log.
+
+.I errlist
+shall be either NULL or contain a handle that shall be used to store a pointer
+to a library allocated nvlist when non-NULL and the operation for at least one
+hold fails.  The names of the holds shall be the keys while the values shall
+contain the error codes and be of type int32. Holds that failed to release
+because they did not exist shall also have an entry added. It shall not be
+touched otherwise.
 
 .SH RETURN VALUES
 .sp

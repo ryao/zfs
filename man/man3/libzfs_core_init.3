@@ -38,18 +38,17 @@ libzfs_core_init, libzfs_core_fini \- Initialize and deinitialize libzfs_core li
 
 .SH DESCRIPTION
 .LP
-The
-\fBlibzfs_core_init\fR()
-function is a singleton constructor for the libzfs_core library. It should be called once at program initialization. Multiple calls to
-\fBlibzfs_core_init\fR()
-are fine provided that they be matched by an equal number of alls to the
-\fBlibzfs_core_fini\fR()
-function.
+The \fBlibzfs_core_init\fR() function is a singleton constructor for the
+libzfs_core library. It should be called once at program initialization.
+Multiple calls to \fBlibzfs_core_init\fR() are fine provided that they be
+matched by an equal number of alls to the \fBlibzfs_core_fini\fR() function.
 
 .SH RETURN VALUES
 .sp
 .LP
-Upon successful completion of the \fBlibzfs_core_init\fR() function, 0 is returned and a file descriptor is open for /dev/zfs. Otherwise, an error is returned.
+Upon successful completion of the \fBlibzfs_core_init\fR() function, 0 is
+returned and a file descriptor is open for /dev/zfs. Otherwise, an error is
+returned.
 .sp
 The \fBlibzfs_core_fini\fR() function returns no value and does not fail.
 .BR

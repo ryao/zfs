@@ -49,15 +49,30 @@ header shall define the following function prototype headers:
 .p
 \fBvoid\fR \fBlibzfs_core_fini\fR(\fBvoid\fR);
 .sp
+\fBint\fR \fBlzc_pool_configs\fR(\fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIconfigs\R);
+\fBint\fR \fBlzc_pool_getprops\fR(\fBconst char *\fR\fIpool\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIprops\fR);
+\fBint\fR \fBlzc_pool_export\fR(\fBconst char *\fR\fIpool\fR, \fBnvlist_t *\fR\fIopts\fR);
+\fBint\fR \fBlzc_pool_import\fR(\fBconst char *\fR\fIpool\fR, \fBnvlist_t *\fR\fIconfig\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fInewconfig\fR);
+\fBint\fR \fBlzc_pool_tryimport\fR(\fBnvlist_t *\fR\fIconfig\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fInewconfig\fR);
+\fBint\fR \fBlzc_pool_stats\fR(\fBconst char *\fR\fIpool\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIstats\fR);
+.sp
 \fBint\fR \fBlzc_list\fR(\fBconst char *\fR\fIname\fR, \fBnvlist_t *\fR\fIopts\fR)
 .p
 \fBint\fR \fBlzc_snapshot\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .p
+\fBint\fR \fBlzc_snapshot_ext\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.p
 \fBint\fR \fBlzc_rollback\fR(\fBconst char *\fR\fIfsname\fR, \fBchar *\fR\fIsnapnamebuf\fR, \fBint\fR \fIsnapnamelen\fR);
+.p
+\fBint\fR \fBlzc_rollback_ext\fR(\fBconst char *\fR\fIfsname\fR, \fBchar *\fR\fIsnapnamebuf\fR, \fBint\fR \fIsnapnamelen\fR, \fBnvlist_t *\fR\fIopts\fR);
 .p
 \fBint\fR \fBlzc_create\fR(\fBconst char *\fR\fIfsname\fR, \fBdmu_objset_type_t\fR \fItype\fR, \fBnvlist_t *\fR\fIprops\fR);
 .p
+\fBint\fR \fBlzc_create_ext\fR(\fBconst char *\fR\fIfsname\fR, \fBdmu_objset_type_t\fR \fItype\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.p
 \fBint\fR \fBlzc_clone\fR(\fBconst char *\fR\fIfsname\fR, \fBconst char *\fR \fIorigin\fR, \fBnvlist_t *\fR\fIprops\fR);
+.p
+\fBint\fR \fBlzc_clone_ext\fR(\fBconst char *\fR\fIfsname\fR, \fBconst char *\fR \fIorigin\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .p
 \fBint\fR \fBlzc_promote\fR(\fBconst char *\fR\fIfsname\fR, \fBnvlist_t *\fR\fIopts\fR);
 .p
@@ -67,17 +82,25 @@ header shall define the following function prototype headers:
 .p
 \fBint\fR \fBlzc_destroy_snaps\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBboolean_t\fR \fIdefer\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .p
-\fBint\fR \fBlzc_bookmark\fR(\fBnvlist_t *\fR\fIbookmarks\fR, \fBnvlist_t
+\fBint\fR \fBlzc_destroy_snaps_ext\fR(\fBnvlist_t *\fR\fIsnaps\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.p
+\fBint\fR \fBlzc_bookmark\fR(\fBnvlist_t *\fR\fIbookmarks\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.p
+\fBint\fR \fBlzc_bookmark_ext\fR(\fBnvlist_t *\fR\fIbookmarks\fR, \fInvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .p
 \fBint\fR \fBlzc_get_bookmarks\fR(\fBconst char *\fR\fIfsname\fR, \fBnvlist_t *\fR\fIprops\fR, \fBnvlist_t **\fR\fIbmarks\fR);
 .p
 \fBint\fR \fBlzc_destroy_bookmarks\fR(\fBnvlist_t *\fR\fIbmarks\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.p
+\fBint\fR \fBlzc_destroy_bookmarks_ext\fR(\fBnvlist_t *\fR\fIbmarks\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .sp
 \fBint\fR \fBlzc_snaprange_space\fR(\fBconst char *\fR\fIfirstsnap\fR, \fBconst char *\fR\fIlastsnap\fR, \fBuint64_t *\fR\fIusedp\fR);
 .sp
 \fBint\fR \fBlzc_hold\fR(\fBnvlist_t *\fR\fIholds\fR, \fBint\fR \fIcleanup_fd\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .p
 \fBint\fR \fBlzc_release\fR(\fBnvlist_t *\fR\fIholds\fR, \fBnvlist_t **\fR\fIerrlist\fR);
+.p
+\fBint\fR \fBlzc_release_ext\fR(\fBnvlist_t *\fR\fIholds\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 .p
 \fBint\fR \fBlzc_get_holds\fR(\fBconst char *\fR\fIsnapname\fR, \fBnvlist_t **\fR\fIholdsp\fR);
 .sp
@@ -90,6 +113,8 @@ header shall define the following function prototype headers:
 \fBint\fR \fBlzc_send_ext\fR(\fBconst char *\fR\fIsnapname\fR, \fBconst char *\fR\fIfrom\fR, \fBint\fR \fIfd\fR, \fBnvlist_t *\fR\fIparams\fR);
 .p
 \fBint\fR \fBlzc_receive\fR(\fBconst char *\fR\fIsnapname\fR, \fBnvlist_t *\fR\fIprops\fR, \fBconst char *\fR\fIorigin\fR, \fBboolean_t\fR \fIforce\fR, \fBint\fR \fIfd\fR);
+.p
+\fBint\fR \fBlzc_receive_with_header\fR(\fBconst char *\fR\fIsnapname\fR, \fBnvlist_t *\fR\fIprops\fR, \fBconst char *\fR\fIorigin\fR, \fBboolean_t\fR \fIforce\fBR, \fBboolean_t\fR \fIresumable\fR, \fBint\fR \fIfd\fR, \fBconst dmu_replay_record_t *\fR\fIbegin_record\fR);
 .p
 \fBint\fR \fBlzc_send_space\fR(\fBconst char *\fR\fIsnapname\fR, \fBconst char *\fR\fIfrom\fR, \fBuint64_t *\fR\fIspacep\fR);
 .p
@@ -116,3 +141,6 @@ enum lzc_send_flags {
 .SH "NOTES"
 .LP
 The above functions have their own man pages in section 3 of the system manual.
+.sp
+All functions will clobber errno with an error code that is the error code of
+the function before the attempt to copy into userspace.

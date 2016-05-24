@@ -32,15 +32,27 @@ This manual page is part of the OpenZFS Programmer's Manual.
 \fBint\fR \fBlzc_receive\fR(\fBconst char *\fR\fIsnapname\fR, \fBnvlist_t
 *\fR\fIprops\fR, \fBconst char *\fR\fIorigin\fR, \fBboolean_t\fR \fIforce\fR,
 \fBint\fR \fIfd\fR);
+.sp
+\fBint\fR \fBlzc_receive_with_header\fR(\fBconst char *\fR\fIsnapname\fR,
+\fBnvlist_t *\fR\fIprops\fR, \fBconst char *\fR\fIorigin\fR, \fBboolean_t\fR
+\fIforce\fBR, \fBboolean_t\fR \fIresumable\fR, \fBint\fR \fIfd\fR, \fBconst
+dmu_replay_record_t *\fR\fIbegin_record\fR);
 
 .SH NAME
-lzc_receive \- Create a snapshot from a zfs send stream
+lzc_receive, lzc_receive_with_header \- Create a snapshot from a zfs send stream
 
 .SH DESCRIPTION
 .LP
 The \fBlzc_receive\fR() function reads a zfs send stream from the file
 descriptor \fIfd\fR to atomically create the snapshot \fIsnapname\fR. Any
 properties specified by \fIprops\fR shall be set as received properties.
+
+The \fBlzc_receive_with_header\fR() function behaves identically when
+\fIbegin_record\fR is NULL. It assumes that the first 312-byte
+dmu_replay_record_t has been read from the ststream and is avaliable from
+\fIbegin_record\fR when \fIbegin_record\fR is non-NULL. In this case, the begin
+record should be provided in unmodified form to avoid a double byte-swap when a
+byte-swap is necessary.
 
 If the stream is a clone, its origin snapshot must be specified by \fIorigin\fR.
 The \fIforce\fR flag will cause the target filesystem to be rolled back or

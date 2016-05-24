@@ -30,7 +30,7 @@ This manual page is part of the OpenZFS Programmer's Manual.
 .SH SYNOPSIS
 #include <libzfs_core.h>
 
-\fBint\fR \fBlzc_set_props\fR(\fBconst char *\fR\fIfsname\fR, \fBnvlist_t *\fR\fIprops\fR, \fBboolean_t\fR \fIreceived\fR);
+\fBint\fR \fBlzc_set_props\fR(\fBconst char *\fR\fIfsname\fR, \fBnvlist_t*\fR\fIprops\fR, \fBnvlist_t *\fR\fIopts\fR, \fBnvlist_t **\fR\fIerrlist\fR);
 
 .SH NAME
 lzc_set_props \- Set properties on a filesystem or volume
@@ -86,7 +86,7 @@ Number of transaction group (txg) when the snapshot provided to the bookmark was
 UNIX timestamp when the snapshot used to make the bookmark was created
 .RE
 .sp
- Currently, the \fIopts\fR argument has two additional options.
+The \fIopts\fR argument supports these options:
 .sp
 .I received
 A boolean property that specifies that the properties being set were received from a send stream.
@@ -94,6 +94,10 @@ A boolean property that specifies that the properties being set were received fr
 .I noatomic
 tells the kernel to handle failures by setting all properties that do not fail.
 This is necessary when setting old-style special properties.
+.sp
+.I log_history
+passes a string containing the userland command invocation for the zpool
+history log.
 .sp
 There are 9 old-style special properties that cannot be set atomically with the others. They are:
 .sp
