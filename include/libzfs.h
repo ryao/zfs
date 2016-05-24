@@ -471,7 +471,8 @@ extern int zfs_prop_get_feature(zfs_handle_t *zhp, const char *propname,
     char *buf, size_t len);
 extern uint64_t getprop_uint64(zfs_handle_t *, zfs_prop_t, char **);
 extern uint64_t zfs_prop_get_int(zfs_handle_t *, zfs_prop_t);
-extern int zfs_prop_inherit(zfs_handle_t *, const char *, boolean_t);
+extern int zfs_prop_inherit(zfs_handle_t *, const char *, boolean_t,
+    const char *);
 extern const char *zfs_prop_values(zfs_prop_t);
 extern int zfs_prop_is_string(zfs_prop_t prop);
 extern nvlist_t *zfs_get_user_props(zfs_handle_t *);
