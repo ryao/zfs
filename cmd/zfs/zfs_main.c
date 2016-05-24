@@ -1829,7 +1829,23 @@ zfs_do_get(int argc, char **argv)
 typedef struct inherit_cbdata {
 	const char *cb_propname;
 	boolean_t cb_received;
+	char *cb_log_history;
 } inherit_cbdata_t;
+
+static int
+inherit_cb(zfs_handle_t *zhp, void *data)
+{
+	inherit_cbdata_t *cb = data;
+	int ret;
+
+	return (zfs_prop_inherit(zhp, cb->cb_propname, cb->cb_received,
+	    cb->cb_log_history) != 0);
+
+	if (ret)
+		cb->cb_log_history = NULL;
+
+	return (ret);
+}
 
 static int
 inherit_recurse_cb(zfs_handle_t *zhp, void *data)
@@ -1845,15 +1861,7 @@ inherit_recurse_cb(zfs_handle_t *zhp, void *data)
 	    !zfs_prop_valid_for_type(prop, zfs_get_type(zhp), B_FALSE))
 		return (0);
 
-	return (zfs_prop_inherit(zhp, cb->cb_propname, cb->cb_received) != 0);
-}
-
-static int
-inherit_cb(zfs_handle_t *zhp, void *data)
-{
-	inherit_cbdata_t *cb = data;
-
-	return (zfs_prop_inherit(zhp, cb->cb_propname, cb->cb_received) != 0);
+	return (inherit_cb(zhp, data));
 }
 
 static int
@@ -1937,6 +1945,8 @@ zfs_do_inherit(int argc, char **argv)
 
 	cb.cb_propname = propname;
 	cb.cb_received = received;
+	cb.cb_log_history = (log_history) ? history_str : NULL;
+	log_history = B_FALSE;
 
 	if (flags & ZFS_ITER_RECURSE) {
 		ret = zfs_for_each(argc, argv, flags, ZFS_TYPE_DATASET,

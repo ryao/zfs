@@ -1668,7 +1668,8 @@ error:
  * is TRUE, revert to the received value, if any.
  */
 int
-zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
+zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received,
+    const char *log_history)
 {
 	nvlist_t *opts = NULL;
 	int ret;
@@ -1680,6 +1681,14 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot inherit %s for '%s'"), propname, zhp->zfs_name);
 
+	opts = fnvlist_alloc();
+
+	if (received)
+		fnvlist_add_boolean(opts, "received");
+
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
+
 	if ((prop = zfs_name_to_prop(propname)) == ZPROP_INVAL) {
 		ret = 0;
 		/*
@@ -1690,11 +1699,6 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "invalid property"));
 			return (zfs_error(hdl, EZFS_BADPROP, errbuf));
-		}
-
-		if (received) {
-			opts = fnvlist_alloc();
-			fnvlist_add_boolean(opts, "received");
 		}
 
 		if (ret == 0 && lzc_inherit(zhp->zfs_name, propname, opts) != 0)
@@ -1747,13 +1751,9 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	if ((ret = changelist_prefix(cl)) != 0)
 		goto error;
 
-	if (received) {
-		opts = fnvlist_alloc();
-		fnvlist_add_boolean(opts, "received");
-	}
 
 	if ((ret = lzc_inherit(zhp->zfs_name, propname, opts)) != 0) {
-		return (zfs_standard_error(hdl, errno, errbuf));
+		ret = zfs_standard_error(hdl, errno, errbuf);
 	} else {
 
 		if ((ret = changelist_postfix(cl)) != 0)
