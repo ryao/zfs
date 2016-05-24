@@ -4566,7 +4566,11 @@ zfs_release(zfs_handle_t *zhp, const char *snapname, const char *tag,
 	}
 
 	opts = fnvlist_alloc();
+	if (log_history)
+		fnvlist_add_string(opts, "log_history", log_history);
+
 	ret = lzc_release_ext(ha.nvl, opts, &errors);
+
 	fnvlist_free(opts);
 	fnvlist_free(ha.nvl);
 
