@@ -1306,11 +1306,13 @@ badlabel:
 
 			break;
 		case ZFS_PROP_UTF8ONLY:
-			(void) zprop_string_to_index(prop, strval, &intval, type);
+			(void) zprop_string_to_index(prop, strval, &intval,
+			    type);
 			chosen_utf = (int)intval;
 			break;
 		case ZFS_PROP_NORMALIZE:
-			(void) zprop_string_to_index(prop, strval, &intval, type);
+			(void) zprop_string_to_index(prop, strval, &intval,
+			    type);
 			chosen_normal = (int)intval;
 			break;
 		default:
