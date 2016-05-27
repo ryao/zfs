@@ -5972,10 +5972,11 @@ typedef struct dls {
 	uint64_t dls_maxdepth;
 	dls_flag_t dls_flags;
 	const char *dls_fsname;
+	cred_t *dls_cr;
 } dls_t;
 
 static int
-dump_zpr(nvlist_t *nvl, vnode_t *vp) {
+dump_zpr(nvlist_t *nvl, vnode_t *vp, cred_t *cr) {
 	size_t nvsize;
 	ssize_t resid;
 	char *packed;
@@ -6009,7 +6010,7 @@ dump_zpr(nvlist_t *nvl, vnode_t *vp) {
 
 	err = vn_rdwr(UIO_WRITE, vp, (caddr_t) zpr, nvsize +
 	    sizeof (zfs_pipe_record_t), 0, UIO_SYSSPACE, FAPPEND,
-	    RLIM64_INFINITY, CRED(), &resid);
+	    RLIM64_INFINITY, cr, &resid);
 
 out:
 	kmem_free(zpr, nvsize + sizeof (zfs_pipe_record_t));
@@ -6021,7 +6022,7 @@ out:
 
 static int
 dump_fs(vnode_t *vp, const char *fsname, nvlist_t *nvprops, dmu_objset_stats_t
-	*objset_stats) {
+	*objset_stats, cred_t *cr) {
 	int err;
 	nvlist_t *outnvl = fnvlist_alloc();
 
@@ -6036,7 +6037,7 @@ dump_fs(vnode_t *vp, const char *fsname, nvlist_t *nvprops, dmu_objset_stats_t
 		fnvlist_free(nvl);
 	}
 
-	err = dump_zpr(outnvl, vp);
+	err = dump_zpr(outnvl, vp, cr);
 	fnvlist_free(outnvl);
 	return (err);
 }
@@ -6106,7 +6107,7 @@ dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 
 			full_name = kmem_asprintf("%s#%s", fsname, bmark);
 			err = dump_fs(dls->dls_vp, full_name, nvl,
-			    &objset_stats);
+			    &objset_stats, dls->dls_cr);
 			strfree(full_name);
 			fnvlist_free(nvl);
 		}
@@ -6153,7 +6154,7 @@ dump_ds(dsl_dataset_t *ds, const char *bmark, void *data)
 	    (strchr(dls->dls_fsname, '@') != NULL))
 		goto out2;
 
-	err = dump_fs(dls->dls_vp, fsname, nvl, &objset_stats);
+	err = dump_fs(dls->dls_vp, fsname, nvl, &objset_stats, dls->dls_cr);
 
 out2:
 	fnvlist_free(nvl);
@@ -6304,11 +6305,15 @@ dump_list_strategy(void *arg)
 
 	(void) vn_rdwr(UIO_WRITE, dls->dls_vp, (caddr_t) &zpr,
 	    sizeof (uint64_t), 0, UIO_SYSSPACE, FAPPEND, RLIM64_INFINITY,
-	    CRED(), &resid);
+	    dls->dls_cr, &resid);
 
 	areleasef(dls->dls_fd, dls->dls_fip);
 	if (dls->dls_fsname)
 		spa_strfree((char *)dls->dls_fsname);
+#ifdef __linux__
+	atomic_dec(&dls->dls_cr->user->processes);
+#endif
+	crfree(dls->dls_cr);
 	kmem_free(dls, sizeof (dls_t));
 }
 
@@ -6327,9 +6332,6 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	boolean_t name_specified = fsname[0] != '\0';
 	boolean_t bmark = B_FALSE;
 	int error;
-#ifdef __linux__
-	const cred_t *cr;
-#endif
 
 	/* Handle the special cases of bookmark names and no names. */
 	if (name_specified) {
@@ -6452,6 +6454,16 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	dls->dls_maxdepth = maxdepth;
 	dls->dls_flags = dls_flags;
 	dls->dls_fsname = (name_specified) ? spa_strdup(fsname) : NULL;
+	dls->dls_cr = CRED();
+
+	/*
+	 * XXX: vn_rdwr on Linux will not obey these credentials. That is okay
+	 * on Linux where we rely on this to pin the Linux user_struct so that
+	 * we can increment the process count here and decrement it from the
+	 * context of the other thread safetly. However, it would be nice to
+	 * modify vn_rdwr to obey this.
+	 */
+	crhold(dls->dls_cr);
 
 	/*
 	 * We make a new thread so that userspace can simply read from the file
@@ -6459,25 +6471,28 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	 * resource limits, so that system imposed resource limits are honored.
 	 */
 #ifdef __linux__
-	cr = prepare_kernel_cred(current);
-	if (!cr) {
-		error = SET_ERROR(ENOMEM);
-		goto rlimit_err;
+
+	if (atomic_inc_and_test(&dls->dls_cr->user->processes) >=
+	    task_rlimit(current, RLIMIT_NPROC)) {
+		/*
+		 * Only root with either CAP_SYS_RESOURCE or CAP_SYS_ADMIN is
+		 * allowed to exceed the process limit.
+		 */
+		if (init_task.real_cred->user != current->real_cred->user ||
+		    (!capable(CAP_SYS_RESOURCE) && !capable(CAP_SYS_ADMIN))) {
+			atomic_dec(&dls->dls_cr->user->processes);
+			error = SET_ERROR(EAGAIN);
+			goto rlimit_err;
+		}
 	}
 
-	cr = override_creds(cr);
-
+	/* XXX:Move to SPL */
 #ifndef ASSIGNED_PRIO
 #define	ASSIGNED_PRIO(p) ((p)->prio - MAX_RT_PRIO)
 #endif
 
-	/* XXX: Fix priority */
-	(void) thread_create(NULL, 0, dump_list_strategy, dls, 0, &p0,
-	    TS_RUN, ASSIGNED_PRIO(curthread));
-
-	revert_creds(cr);
-
-	if (error) {
+	if (thread_create(NULL, 0, dump_list_strategy, dls, 0, &p0,
+	    TS_RUN, ASSIGNED_PRIO(curthread)) == NULL) {
 		error = SET_ERROR(EAGAIN);
 		goto rlimit_err;
 	}
@@ -6485,18 +6500,18 @@ zfs_stable_ioc_zfs_list(const char *fsname, nvlist_t *innvl,
 	if (lwp_create(dump_list_strategy, dls, 0, curproc, TS_RUN,
 	    ASSIGNED_PRIO(curthread), &t0.t_hold, curthread->t_cid, 0) ==
 	    NULL) {
-		kmem_free(dls, sizeof (dls_t)) {
 		error = SET_ERROR(EAGAIN);
 		goto rlimit_err;
 	}
 #endif
 
-	return (error);
+	return (0);
 
 rlimit_err:
+	crfree(dls->dls_cr);
 	kmem_free(dls, sizeof (dls_t));
 	releasef(fd);
-	return (SET_ERROR(error));
+	return (error);
 
 }
 
