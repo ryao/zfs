@@ -1066,7 +1066,8 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 
 			if (zhp == NULL)
 				break;
-			(void) zprop_string_to_index(prop, strval, &intval, type);
+			(void) zprop_string_to_index(prop, strval, &intval,
+			    type);
 			version = zfs_prop_get_int(zhp, ZFS_PROP_VERSION);
 			if (intval < version) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
