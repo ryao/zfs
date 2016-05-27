@@ -3584,13 +3584,15 @@ zfs_promote(zfs_handle_t *zhp, const char *log_history)
 			ASSERT(outnvl);
 
 			/*
-			 * We could use zhp->zfs_dmustats.dds_origin instead of getting
-			 * the parent from the kernel, but we get it from the kernel to
-			 * exercise the lzc_promote codepath. The same goes for relying
-			 * on the return value ENOTDIR to tell us about a snapshot
-			 * intead of using zhp->zfs_type == ZFS_TYPE_SNAPSHOT.
+			 * We could use zhp->zfs_dmustats.dds_origin instead of
+			 * getting the parent from the kernel, but we get it
+			 * from the kernel to exercise the lzc_promote
+			 * codepath. The same goes for relying on the return
+			 * value ENOTDIR to tell us about a snapshot intead of
+			 * using zhp->zfs_type == ZFS_TYPE_SNAPSHOT.
 			 */
-			(void) nvlist_lookup_string(outnvl, "conflsnap", &conflsnap);
+			(void) nvlist_lookup_string(outnvl, "conflsnap",
+			    &conflsnap);
 			(void) nvlist_lookup_string(outnvl, "parent", &parent);
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "conflicting snapshot '%s' from parent '%s'"),
