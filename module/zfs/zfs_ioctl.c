@@ -7482,6 +7482,8 @@ zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 	char *saved_poolname = NULL;
 	nvlist_t *innvl = NULL;
 	fstrans_cookie_t cookie;
+	int cmd_len = (cmd == ZFS_IOC_LIBZFS_CORE) ? offsetof(zfs_cmd_t,
+	    zc_real_err) + sizeof (zc->zc_real_err) : sizeof (zfs_cmd_t);
 
 	vecnum = cmd - ZFS_IOC_FIRST;
 	if (vecnum >= sizeof (zfs_ioc_vec) / sizeof (zfs_ioc_vec[0]))
@@ -7495,9 +7497,12 @@ zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 	if (vec->zvec_func == NULL && vec->zvec_legacy_func == NULL)
 		return (-SET_ERROR(EINVAL));
 
+	/*
+	 * We overallocate until we are ready to phase out the legacy interface.
+	 */
 	zc = kmem_zalloc(sizeof (zfs_cmd_t), KM_SLEEP);
 
-	error = ddi_copyin((void *)arg, zc, sizeof (zfs_cmd_t), flag);
+	error = ddi_copyin((void *)arg, zc, cmd_len, flag);
 	if (error != 0) {
 		error = SET_ERROR(EFAULT);
 		goto out;
@@ -7597,7 +7602,7 @@ zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 
 out:
 	nvlist_free(innvl);
-	rc = ddi_copyout(zc, (void *)arg, sizeof (zfs_cmd_t), flag);
+	rc = ddi_copyout(zc, (void *)arg, cmd_len, flag);
 	if (error == 0 && rc != 0)
 		error = SET_ERROR(EFAULT);
 	if (error == 0 && vec->zvec_allow_log) {
