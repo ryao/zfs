@@ -2027,9 +2027,12 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 			    zfs_prop_to_name(prop), val) != 0) {
 				*val = getprop_uint64(zhp, prop, source);
 			}
-		} else
+		} else {
+			if (prop == ZFS_PROP_VERSION &&
+			    zhp->zfs_type == ZFS_TYPE_VOLUME)
+				*val = zfs_prop_default_numeric(prop);
 			return (-1);
-
+		}
 		break;
 
 	case ZFS_PROP_INCONSISTENT:
