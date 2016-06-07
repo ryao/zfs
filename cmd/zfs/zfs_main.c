@@ -2088,7 +2088,7 @@ zfs_do_upgrade(int argc, char **argv)
 	int ret = 0;
 	upgrade_cbdata_t cb = { 0 };
 	signed char c;
-	int flags = ZFS_ITER_ARGS_CAN_BE_PATHS;
+	int flags = ZFS_ITER_ARGS_CAN_BE_PATHS | ZFS_ITER_TYPES_SPECIFIED;
 
 	/* check options */
 	while ((c = getopt(argc, argv, "rvV:a")) != -1) {
