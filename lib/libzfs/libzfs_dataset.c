@@ -3781,6 +3781,7 @@ typedef struct rollback_data {
 	boolean_t	cb_error;
 	boolean_t	cb_force;
 	const char	*cb_log_history;
+	uint64_t	cb_destroy_count;
 } rollback_data_t;
 
 static int
@@ -3819,7 +3820,7 @@ rollback_destroy(zfs_handle_t *zhp, void *data)
 		boolean_t error = zfs_iter_dependents(zhp, B_FALSE,
 		    rollback_destroy_dependent, cbp);
 
-		if (!error)
+		if (!error && cbp->cb_destroy_count > 0)
 			cbp->cb_log_history = NULL;
 		cbp->cb_error |= error;
 
@@ -3862,6 +3863,7 @@ zfs_rollback(zfs_handle_t *zhp, zfs_handle_t *snap, boolean_t force,
 	cb.cb_target = snap->zfs_name;
 	cb.cb_create = zfs_prop_get_int(snap, ZFS_PROP_CREATETXG);
 	cb.cb_log_history = log_history;
+	cb.cb_destroy_count = 0;
 	(void) zfs_iter_snapshots(zhp, B_FALSE, rollback_destroy, &cb);
 	(void) zfs_iter_bookmarks(zhp, rollback_destroy, &cb);
 
