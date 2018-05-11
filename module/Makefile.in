@@ -1,4 +1,4 @@
-subdir-m += avl
+subdir-m += @USE_OWN_AVL@
 subdir-m += nvpair
 subdir-m += unicode
 subdir-m += zcommon

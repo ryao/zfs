@@ -4,8 +4,6 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/abd.h \
 	$(top_srcdir)/include/sys/arc.h \
 	$(top_srcdir)/include/sys/arc_impl.h \
-	$(top_srcdir)/include/sys/avl.h \
-	$(top_srcdir)/include/sys/avl_impl.h \
 	$(top_srcdir)/include/sys/blkptr.h \
 	$(top_srcdir)/include/sys/bplist.h \
 	$(top_srcdir)/include/sys/bpobj.h \
@@ -113,6 +111,12 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/zio_impl.h \
 	$(top_srcdir)/include/sys/zio_priority.h \
 	$(top_srcdir)/include/sys/zrlock.h
+
+if USE_OWN_AVL
+COMMON_H += \
+	$(top_srcdir)/include/sys/avl.h \
+	$(top_srcdir)/include/sys/avl_impl.h
+endif
 
 KERNEL_H = \
 	$(top_srcdir)/include/sys/zfs_ioctl.h \
