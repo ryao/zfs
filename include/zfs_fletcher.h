@@ -126,6 +126,8 @@ typedef struct fletcher_4_func {
 
 extern const fletcher_4_ops_t fletcher_4_superscalar_ops;
 extern const fletcher_4_ops_t fletcher_4_superscalar4_ops;
+extern const fletcher_4_ops_t fletcher_4_unrolled_ops;
+extern const fletcher_4_ops_t fletcher_4_unrolled8_ops;
 
 #if defined(HAVE_SSE2)
 extern const fletcher_4_ops_t fletcher_4_sse2_ops;

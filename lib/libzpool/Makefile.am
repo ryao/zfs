@@ -36,6 +36,8 @@ KERNEL_C = \
 	zfs_fletcher_sse.c \
 	zfs_fletcher_superscalar.c \
 	zfs_fletcher_superscalar4.c \
+	zfs_fletcher_unrolled4.c \
+	zfs_fletcher_unrolled8.c \
 	zfs_namecheck.c \
 	zfs_prop.c \
 	zfs_uio.c \
