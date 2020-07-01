@@ -131,20 +131,33 @@ fletcher_4_sse2_native(fletcher_4_ctx_t *ctx, const void *buf, uint64_t size)
 static void
 fletcher_4_sse2_byteswap(fletcher_4_ctx_t *ctx, const void *buf, uint64_t size)
 {
-	const uint32_t *ip = buf;
-	const uint32_t *ipend = (uint32_t *)((uint8_t *)ip + size);
+	const uint64_t *ip = buf;
+	const uint64_t *ipend = (uint64_t *)((uint8_t *)ip + size);
 
 	kfpu_begin();
 
 	FLETCHER_4_SSE_RESTORE_CTX(ctx);
 
+	asm volatile("pxor %xmm4, %xmm4");
+
 	for (; ip < ipend; ip += 2) {
-		uint32_t scratch1 = BSWAP_32(ip[0]);
-		uint32_t scratch2 = BSWAP_32(ip[1]);
-		asm volatile("movd %0, %%xmm5" :: "r"(scratch1));
-		asm volatile("movd %0, %%xmm6" :: "r"(scratch2));
-		asm volatile("punpcklqdq %xmm6, %xmm5");
+		asm volatile("movdqu %0, %%xmm5" :: "m"(*ip));
+		asm volatile("movdqa %xmm5, %xmm6");
+		asm volatile("psrlw $8, %xmm5");
+		asm volatile("psllw $8, %xmm6");
+		asm volatile("por %xmm6, %xmm5");
+		asm volatile("movdqa %xmm5, %xmm6");
+		asm volatile("psrld $16, %xmm5");
+		asm volatile("pslld $16, %xmm6");
+		asm volatile("por %xmm6, %xmm5");
+		asm volatile("movdqa %xmm5, %xmm6");
+		asm volatile("punpckldq %xmm4, %xmm5");
+		asm volatile("punpckhdq %xmm4, %xmm6");
 		asm volatile("paddq %xmm5, %xmm0");
+		asm volatile("paddq %xmm0, %xmm1");
+		asm volatile("paddq %xmm1, %xmm2");
+		asm volatile("paddq %xmm2, %xmm3");
+		asm volatile("paddq %xmm6, %xmm0");
 		asm volatile("paddq %xmm0, %xmm1");
 		asm volatile("paddq %xmm1, %xmm2");
 		asm volatile("paddq %xmm2, %xmm3");
