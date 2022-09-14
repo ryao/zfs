@@ -24,6 +24,11 @@
 #ifndef _SPL_VMSYSTM_H
 #define	_SPL_VMSYSTM_H
 
+/* Hack for RT kernel compatibility */
+#ifdef CONFIG_PREEMPT_RT
+#undef CONFIG_PREEMPT_RT
+#endif
+
 #include <linux/mmzone.h>
 #include <linux/mm.h>
 #include <linux/swap.h>

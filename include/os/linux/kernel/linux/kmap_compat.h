@@ -26,6 +26,11 @@
 #ifndef _ZFS_KMAP_H
 #define	_ZFS_KMAP_H
 
+/* Hack for RT kernel compatibility */
+#ifdef CONFIG_PREEMPT_RT
+#undef CONFIG_PREEMPT_RT
+#endif
+
 #include <linux/highmem.h>
 #include <linux/uaccess.h>
 
