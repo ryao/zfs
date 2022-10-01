@@ -769,6 +769,7 @@ print_stats(zpool_handle_t *zhp, void *data)
 	return (err);
 }
 
+__attribute__((noreturn))
 static void
 usage(char *name)
 {

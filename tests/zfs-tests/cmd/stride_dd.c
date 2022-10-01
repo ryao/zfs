@@ -32,6 +32,7 @@ static const char *execname = "stride_dd";
 static void usage(void);
 static void parse_options(int argc, char *argv[]);
 
+__attribute__((noreturn))
 static void
 usage(void)
 {

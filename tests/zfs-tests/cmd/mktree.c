@@ -83,6 +83,7 @@ main(int argc, char *argv[])
 	return (ret);
 }
 
+__attribute__((noreturn))
 static void
 usage(char *this)
 {

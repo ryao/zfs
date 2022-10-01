@@ -46,6 +46,7 @@
 #define	MAP_NPERMS		"nperms"
 #define	MAP_PERMS		"perms"
 
+__attribute__((noreturn))
 static void
 draid_usage(void)
 {

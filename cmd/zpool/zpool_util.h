@@ -39,8 +39,11 @@ extern "C" {
 /*
  * Basic utility functions
  */
+__attribute__((malloc, alloc_size(1), returns_nonnull))
 void *safe_malloc(size_t);
+__attribute__((alloc_size(2), returns_nonnull))
 void *safe_realloc(void *, size_t);
+__attribute__((noreturn))
 void zpool_no_memory(void);
 uint_t num_logs(nvlist_t *nv);
 uint64_t array64_max(uint64_t array[], unsigned int len);

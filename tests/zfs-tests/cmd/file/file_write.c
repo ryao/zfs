@@ -243,6 +243,7 @@ main(int argc, char **argv)
 	return (0);
 }
 
+__attribute__((noreturn))
 static void
 usage(char *prog)
 {

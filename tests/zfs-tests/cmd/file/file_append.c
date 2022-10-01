@@ -34,6 +34,7 @@ static int numblocks = 8;
 static const char *execname = "file_append";
 static int use_odirect = 0;
 
+__attribute__((noreturn))
 static void
 usage(void)
 {

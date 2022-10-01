@@ -31,7 +31,9 @@
 extern "C" {
 #endif
 
+__attribute__((malloc, returns_nonnull))
 void *safe_malloc(size_t size);
+__attribute__((noreturn))
 void nomem(void);
 extern libzfs_handle_t *g_zfs;
 

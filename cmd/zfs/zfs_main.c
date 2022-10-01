@@ -436,6 +436,7 @@ get_usage(zfs_help_t idx)
 	}
 }
 
+__attribute__((noreturn))
 void
 nomem(void)
 {
@@ -447,6 +448,7 @@ nomem(void)
  * Utility function to guarantee malloc() success.
  */
 
+__attribute__((malloc, alloc_size(1), returns_nonnull))
 void *
 safe_malloc(size_t size)
 {
@@ -458,6 +460,7 @@ safe_malloc(size_t size)
 	return (data);
 }
 
+__attribute__((alloc_size(2), returns_nonnull))
 static void *
 safe_realloc(void *data, size_t size)
 {
@@ -470,6 +473,7 @@ safe_realloc(void *data, size_t size)
 	return (newp);
 }
 
+__attribute__((malloc, returns_nonnull))
 static char *
 safe_strdup(const char *str)
 {

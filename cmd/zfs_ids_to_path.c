@@ -32,6 +32,7 @@
 
 libzfs_handle_t *g_zfs;
 
+__attribute__((noreturn))
 static void
 usage(int err)
 {

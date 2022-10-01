@@ -403,6 +403,33 @@ void procfs_list_destroy(procfs_list_t *procfs_list);
 void procfs_list_add(procfs_list_t *procfs_list, void *p);
 #endif
 
+#ifdef DEBUG
+
+#include <umem.h>
+
+__attribute__((returns_nonnull, alloc_size(1), malloc))
+static inline void *
+umem_alloc_nofail(size_t size, int kmflags)
+{
+	return (umem_alloc(size, kmflags));
+}
+
+__attribute__((returns_nonnull, alloc_size(1), malloc))
+static inline void *
+umem_zalloc_nofail(size_t size, int kmflags)
+{
+	return (umem_zalloc(size, kmflags));
+}
+
+__attribute__((returns_nonnull, malloc))
+static inline void *
+umem_cache_alloc_nofail(umem_cache_t *cp, int flags)
+{
+	return (umem_cache_alloc(cp, flags));
+}
+
+#endif /* DEBUG */
+
 /*
  * Kernel memory
  */
@@ -412,8 +439,20 @@ void procfs_list_add(procfs_list_t *procfs_list, void *p);
 #define	KM_NORMALPRI		0	/* not needed with UMEM_DEFAULT */
 #define	KMC_NODEBUG		UMC_NODEBUG
 #define	KMC_KVMEM		0x0
-#define	kmem_alloc(_s, _f)	umem_alloc(_s, _f)
-#define	kmem_zalloc(_s, _f)	umem_zalloc(_s, _f)
+#ifdef DEBUG
+#define	kmem_alloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
+	    umem_alloc_nofail(_s, _f) : umem_alloc(_s, _f))
+#ifdef __clang_analyzer__
+#define	kmem_zalloc(_s, _f)	(memset((((_f) & KM_NOSLEEP) == 0) ?	\
+	    umem_zalloc_nofail(_s, _f) : umem_zalloc(_s, _f), 0, _s))
+#else /* __clang_analyzer__ */
+#define	kmem_zalloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
+	    umem_zalloc_nofail(_s, _f) : umem_zalloc(_s, _f))
+#endif
+#else
+#define	kmem_alloc(_b, _s)	umem_alloc(_b, _s)
+#define	kmem_zalloc(_b, _s)	umem_zalloc(_b, _s)
+#endif /* DEBUG */
 #define	kmem_free(_b, _s)	umem_free(_b, _s)
 #define	vmem_alloc(_s, _f)	kmem_alloc(_s, _f)
 #define	vmem_zalloc(_s, _f)	kmem_zalloc(_s, _f)
@@ -421,7 +460,12 @@ void procfs_list_add(procfs_list_t *procfs_list, void *p);
 #define	kmem_cache_create(_a, _b, _c, _d, _e, _f, _g, _h, _i) \
 	umem_cache_create(_a, _b, _c, _d, _e, _f, _g, _h, _i)
 #define	kmem_cache_destroy(_c)	umem_cache_destroy(_c)
+#ifdef DEBUG
+#define	kmem_cache_alloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
+	    umem_cache_alloc_nofail(_s, _f) : umem_cache_alloc(_s, _f))
+#else
 #define	kmem_cache_alloc(_c, _f) umem_cache_alloc(_c, _f)
+#endif /* DEBUG */
 #define	kmem_cache_free(_c, _b)	umem_cache_free(_c, _b)
 #define	kmem_debugging()	0
 #define	kmem_cache_reap_now(_c)	umem_cache_reap_now(_c);

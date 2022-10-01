@@ -37,6 +37,7 @@
 #include <sysexits.h>
 #include <err.h>
 
+__attribute__((noreturn))
 static void
 usage(const char *name)
 {

@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <sys/param.h>
 
+__attribute__((noreturn))
 static void
 usage(const char *msg, int exit_value)
 {

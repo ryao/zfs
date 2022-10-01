@@ -31,6 +31,7 @@ static int	ftruncflag = 0;
 
 static void parse_options(int argc, char *argv[]);
 
+__attribute__((noreturn))
 static void
 usage(char *execname)
 {

@@ -165,6 +165,7 @@ _zed_conf_display_help(const char *prog, boolean_t got_err)
 /*
  * Display license information to stdout and exit.
  */
+__attribute__((noreturn))
 static void
 _zed_conf_display_license(void)
 {
@@ -183,6 +184,7 @@ _zed_conf_display_license(void)
 /*
  * Display version information to stdout and exit.
  */
+__attribute__((noreturn))
 static void
 _zed_conf_display_version(void)
 {

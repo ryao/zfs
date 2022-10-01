@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 
+__attribute__((noreturn))
 static void
 usage(const char *msg, int exit_value)
 {

@@ -132,6 +132,7 @@ out:
 	return (err);
 }
 
+__attribute__((noreturn))
 static void
 usage(char *name)
 {

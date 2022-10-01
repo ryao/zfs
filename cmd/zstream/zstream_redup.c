@@ -65,6 +65,7 @@ highbit64(uint64_t i)
 	return (NBBY * sizeof (uint64_t) - __builtin_clzll(i));
 }
 
+__attribute__((malloc, alloc_size(1), returns_nonnull))
 void *
 safe_calloc(size_t n)
 {

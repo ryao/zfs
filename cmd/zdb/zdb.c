@@ -924,6 +924,7 @@ dump_debug_buffer(void)
  * dmu_bonus_hold(), or pool_match().  abort() is called for other errors.
  */
 
+__attribute__((noreturn, format (printf, 1, 2)))
 static void
 fatal(const char *fmt, ...)
 {

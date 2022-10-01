@@ -127,7 +127,8 @@ extern void *zfs_realloc(libzfs_handle_t *, void *, size_t, size_t);
 extern char *zfs_asprintf(libzfs_handle_t *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 extern char *zfs_strdup(libzfs_handle_t *, const char *);
-extern int no_memory(libzfs_handle_t *);
+extern int no_memory(libzfs_handle_t *)
+    __attribute__((__noreturn__));
 
 extern int zfs_standard_error_fmt(libzfs_handle_t *, int, const char *, ...)
     __attribute__((format(printf, 3, 4)));

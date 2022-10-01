@@ -64,6 +64,7 @@ static void parse_options(int argc, char *argv[]);
 static void do_write(int fd);
 static void do_trunc(int fd);
 
+__attribute__((noreturn))
 static void
 usage(char *execname)
 {

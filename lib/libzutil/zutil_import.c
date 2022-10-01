@@ -148,6 +148,7 @@ zutil_error(libpc_handle_t *hdl, lpc_error_t error, const char *msg)
 	return (zutil_error_fmt(hdl, error, "%s", msg));
 }
 
+__attribute__((noreturn))
 static int
 zutil_no_memory(libpc_handle_t *hdl)
 {

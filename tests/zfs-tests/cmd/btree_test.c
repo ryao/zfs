@@ -29,6 +29,7 @@ static int contents_frequency = 100;
 static int tree_limit = 64 * 1024;
 static boolean_t stress_only = B_FALSE;
 
+__attribute__((noreturn))
 static void
 usage(int exit_value)
 {

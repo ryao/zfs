@@ -40,8 +40,7 @@
  * section of the file
  */
 
-static void usage(char *progname);
-
+__attribute__((noreturn))
 static void
 usage(char *progname)
 {

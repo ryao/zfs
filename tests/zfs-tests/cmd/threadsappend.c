@@ -75,6 +75,7 @@ go(void *data)
 	return (NULL);
 }
 
+__attribute__((noreturn))
 static void
 usage(void)
 {
