@@ -735,6 +735,9 @@ zpl_revalidate(struct dentry *dentry, unsigned int flags)
 	if (dentry->d_inode && ITOZ(dentry->d_inode)->z_is_stale)
 		return (0);
 
+	if ((zfsvfs->z_norm & (U8_CANON_DECOMP|U8_COMPAT_DECOMP|U8_CANON_COMP)))
+		return (0);
+
 	return (1);
 }
 
