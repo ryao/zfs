@@ -450,8 +450,10 @@ umem_cache_alloc_nofail(umem_cache_t *cp, int flags)
 	    umem_zalloc_nofail(_s, _f) : umem_zalloc(_s, _f))
 #endif
 #else
-#define	kmem_alloc(_b, _s)	umem_alloc(_b, _s)
-#define	kmem_zalloc(_b, _s)	umem_zalloc(_b, _s)
+#define	kmem_alloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
+	    umem_alloc(_s, UMEM_NOFAIL) : umem_alloc(_s, UMEM_DEFAULT))
+#define	kmem_zalloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
+	    umem_zalloc(_s, UMEM_NOFAIL) : umem_zalloc(_s, UMEM_DEFAULT))
 #endif /* DEBUG */
 #define	kmem_free(_b, _s)	umem_free(_b, _s)
 #define	vmem_alloc(_s, _f)	kmem_alloc(_s, _f)
@@ -462,9 +464,12 @@ umem_cache_alloc_nofail(umem_cache_t *cp, int flags)
 #define	kmem_cache_destroy(_c)	umem_cache_destroy(_c)
 #ifdef DEBUG
 #define	kmem_cache_alloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
-	    umem_cache_alloc_nofail(_s, _f) : umem_cache_alloc(_s, _f))
+	    umem_cache_alloc_nofail(_s, UMEM_NOFAIL) :				\
+	    umem_cache_alloc(_s, UMEM_DEFAULT))
 #else
-#define	kmem_cache_alloc(_c, _f) umem_cache_alloc(_c, _f)
+#define	kmem_cache_alloc(_s, _f)	((((_f) & KM_NOSLEEP) == 0) ?		\
+	    umem_cache_alloc(_s, UMEM_NOFAIL) :					\
+	    umem_cache_alloc(_s, UMEM_DEFAULT))
 #endif /* DEBUG */
 #define	kmem_cache_free(_c, _b)	umem_cache_free(_c, _b)
 #define	kmem_debugging()	0
