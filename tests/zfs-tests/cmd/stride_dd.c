@@ -156,7 +156,7 @@ main(int argc, char *argv[])
 	}
 
 	if (seek > 0) {
-		if (lseek(ofd, seek * bsize, SEEK_CUR) == -1) {
+		if (lseek(ofd, (uint64_t)seek * bsize, SEEK_CUR) == -1) {
 			perror("output lseek");
 			exit(2);
 		}
@@ -195,11 +195,13 @@ main(int argc, char *argv[])
 		}
 
 		if (stride > 1) {
-			if (lseek(ifd, (stride - 1) * bsize, SEEK_CUR) == -1) {
+			if (lseek(ifd, ((uint64_t)stride - 1) * bsize,
+			    SEEK_CUR) == -1) {
 				perror("input lseek");
 				exit(2);
 			}
-			if (lseek(ofd, (stride - 1) * bsize, SEEK_CUR) == -1) {
+			if (lseek(ofd, ((uint64_t)stride - 1) * bsize,
+			    SEEK_CUR) == -1) {
 				perror("output lseek");
 				exit(2);
 			}
