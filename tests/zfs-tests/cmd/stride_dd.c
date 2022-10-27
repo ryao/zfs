@@ -195,12 +195,12 @@ main(int argc, char *argv[])
 		}
 
 		if (stride > 1) {
-			if (lseek(ifd, ((uint64_t)stride - 1) * bsize,
+			if (lseek(ifd, (stride - 1ULL) * bsize,
 			    SEEK_CUR) == -1) {
 				perror("input lseek");
 				exit(2);
 			}
-			if (lseek(ofd, ((uint64_t)stride - 1) * bsize,
+			if (lseek(ofd, (stride - 1ULL) * bsize,
 			    SEEK_CUR) == -1) {
 				perror("output lseek");
 				exit(2);
