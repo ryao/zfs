@@ -27,6 +27,32 @@ jobs:
       with:
         queries: security-and-quality
         languages: ${{ matrix.language }}
+        # Until github/codeql#11021 is fixed, we need to use query filters to
+        # workaround people not being able to see defects marked as either
+        # WONTFIX or a false positive in the main repository. We fall back to
+        # using query filters so that bad results are not shown to everyone in
+        # their repositories.
+        query-filters:
+          # Every report appears to be a false positive. See
+          # github/codeql#11219.
+          - exclude:
+              id: cpp/unused-static-function
+
+          # Only instance is a false positive. See github/codeql#11215.
+          # FIXME: Narrow scope to that one file when method is found in
+          # github/codeql#11220.
+          - exclude:
+              id: cpp/uncontrolled-allocation-size
+
+          # Not necessarily an issue, and is difficult to address in
+          #
+          #   * lib/libnvpair/libnvpair.c
+          #   * module/lua/lstrlib.c
+          #
+          # FIXME: Narrow scope to that one file when method is found in
+          # github/codeql#11220.
+          - exclude:
+              id: cpp/non-constant-format
 
     - name: Autobuild
       uses: github/codeql-action/autobuild@v2
