@@ -1183,7 +1183,7 @@ zfs_file_pwrite(zfs_file_t *fp, const void *buf,
 	sectors = count >> SPA_MINBLOCKSHIFT;
 	split = (sectors > 0 ? rand() % sectors : 0) << SPA_MINBLOCKSHIFT;
 	rc = pwrite64(fp->f_fd, buf, split, pos);
-	if (rc != -1) {
+	if (rc > -1) {
 		done = rc;
 		rc = pwrite64(fp->f_fd, (char *)buf + split,
 		    count - split, pos + split);
