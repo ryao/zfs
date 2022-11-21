@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+env:
+  MAKEFLAGS: -j2
+
 jobs:
   analyze:
     name: Analyze
