@@ -5,7 +5,9 @@ on:
   pull_request:
 
 env:
-  MAKEFLAGS: -j$(nproc)
+  MAKEFLAGS: -j4
+  CODEQL_THREADS: 4
+  CODEQL_EXTRACTOR_CPP_THREADS: 4
 
 jobs:
   analyze:
