@@ -4,11 +4,6 @@ on:
   push:
   pull_request:
 
-env:
-  MAKEFLAGS: -j4
-  CODEQL_THREADS: 4
-  CODEQL_EXTRACTOR_CPP_THREADS: 4
-
 jobs:
   analyze:
     name: Analyze
@@ -24,6 +19,10 @@ jobs:
         language: [ 'cpp', 'python' ]
 
     steps:
+    - name: Set MAKE jobs
+      run: |
+        echo "MAKEFLAGS=-j$(nproc)" >> $GITHUB_ENV
+
     - name: Checkout repository
       uses: actions/checkout@v3
 
