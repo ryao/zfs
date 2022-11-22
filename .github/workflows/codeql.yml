@@ -5,7 +5,7 @@ on:
   pull_request:
 
 env:
-  MAKEFLAGS: -j4
+  MAKEFLAGS: -j$(nproc)
 
 jobs:
   analyze:
