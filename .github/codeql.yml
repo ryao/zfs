@@ -1,0 +1,39 @@
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  - exclude:
+      id: cpp/non-constant-format
+  - exclude:
+      id: cpp/potentially-dangerous-function
+  - exclude:
+      id: cpp/suspicious-pointer-scaling
+  - exclude:
+      id: cpp/path-injection
+  - exclude:
+      id: cpp/stack-address-escape
+  - exclude:
+      id: cpp/poorly-documented-function
+  - exclude:
+      id: cpp/loop-variable-changed
+  - exclude:
+      id: cpp/trivial-switch
+  - exclude:
+      id: cpp/commented-out-code
+  - exclude:
+      id: cpp/unused-static-variable
+  - exclude:
+      id: cpp/unused-static-function
+  - exclude:
+      id: cpp/long-switch
+  - exclude:
+      id: cpp/declaration-hides-variable
+  - exclude:
+      id: cpp/declaration-hides-parameter
+  - exclude:
+      id: cpp/complex-condition
+  - exclude:
+      id: cpp/short-global-name
+
+paths-ignore:
+  - tests
