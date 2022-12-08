@@ -243,3 +243,79 @@ const fletcher_4_ops_t fletcher_4_ssse3_ops = {
 };
 
 #endif /* defined(HAVE_SSE2) && defined(HAVE_SSSE3) */
+
+#if defined(HAVE_SSE4_1)
+static void
+fletcher_4_sse4_1_native(fletcher_4_ctx_t *ctx, const void *buf, uint64_t size)
+{
+	const uint64_t *ip = buf;
+	const uint64_t *ipend = (uint64_t *)((uint8_t *)ip + size);
+
+	FLETCHER_4_SSE_RESTORE_CTX(ctx);
+
+	do {
+		asm volatile("pmovzxdq %0, %%xmm9" :: "m"(*ip));
+		asm volatile("pmovzxdq %0, %%xmm10" :: "m"(*(ip+1)));
+		asm volatile("paddq %xmm9, %xmm0");
+		asm volatile("paddq %xmm0, %xmm2");
+		asm volatile("paddq %xmm2, %xmm4");
+		asm volatile("paddq %xmm4, %xmm6");
+		asm volatile("paddq %xmm10, %xmm1");
+		asm volatile("paddq %xmm1, %xmm3");
+		asm volatile("paddq %xmm3, %xmm5");
+		asm volatile("paddq %xmm5, %xmm7");
+	} while ((ip += 2) < ipend);
+
+	FLETCHER_4_SSE_SAVE_CTX(ctx);
+}
+
+static void
+fletcher_4_sse4_1_byteswap(fletcher_4_ctx_t *ctx, const void *buf, uint64_t size)
+{
+	static const zfs_fletcher_sse_t mask = {
+		.v = { 0x0405060700010203, 0x0C0D0E0F08090A0B }
+	};
+
+	const uint64_t *ip = buf;
+	const uint64_t *ipend = (uint64_t *)((uint8_t *)ip + size);
+
+	FLETCHER_4_SSE_RESTORE_CTX(ctx);
+
+	asm volatile("movdqu %0, %%xmm11"::"m" (mask));
+	asm volatile("pxor %xmm8, %xmm8");
+
+	do {
+		asm volatile("movdqu %0, %%xmm9"::"m" (*ip));
+		asm volatile("pshufb %xmm11, %xmm10");
+		asm volatile("pmovzxdq %xmm10, %xmm9");
+		asm volatile("punpckhdq %xmm8, %xmm10");
+		asm volatile("paddq %xmm9, %xmm0");
+		asm volatile("paddq %xmm0, %xmm2");
+		asm volatile("paddq %xmm2, %xmm4");
+		asm volatile("paddq %xmm4, %xmm6");
+		asm volatile("paddq %xmm10, %xmm1");
+		asm volatile("paddq %xmm1, %xmm3");
+		asm volatile("paddq %xmm3, %xmm5");
+		asm volatile("paddq %xmm5, %xmm7");
+	} while ((ip += 2) < ipend);
+
+	FLETCHER_4_SSE_SAVE_CTX(ctx);
+}
+
+static boolean_t fletcher_4_sse4_1_valid(void)
+{
+	return (kfpu_allowed() && zfs_sse4_1_available());
+}
+
+const fletcher_4_ops_t fletcher_4_sse4_1_ops = {
+	.init_native = fletcher_4_sse2_init,
+	.fini_native = fletcher_4_sse2_fini,
+	.compute_native = fletcher_4_sse4_1_native,
+	.init_byteswap = fletcher_4_sse2_init,
+	.fini_byteswap = fletcher_4_sse2_fini,
+	.compute_byteswap = fletcher_4_sse4_1_byteswap,
+	.valid = fletcher_4_sse4_1_valid,
+	.name = "sse4.1"
+};
+
+#endif /* defined(HAVE_SSE4_1) */

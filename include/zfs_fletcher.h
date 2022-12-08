@@ -96,7 +96,7 @@ typedef union fletcher_4_ctx {
 	zio_cksum_t scalar;
 	zfs_fletcher_superscalar_t superscalar[4];
 
-#if defined(HAVE_SSE2) || (defined(HAVE_SSE2) && defined(HAVE_SSSE3))
+#if defined(HAVE_SSE2) || (defined(HAVE_SSE2))
 	zfs_fletcher_sse_t sse[8];
 #endif
 #if defined(HAVE_AVX) && defined(HAVE_AVX2)
@@ -136,8 +136,12 @@ _ZFS_FLETCHER_H const fletcher_4_ops_t fletcher_4_superscalar4_ops;
 _ZFS_FLETCHER_H const fletcher_4_ops_t fletcher_4_sse2_ops;
 #endif
 
-#if defined(HAVE_SSE2) && defined(HAVE_SSSE3)
+#if defined(HAVE_SSSE3)
 _ZFS_FLETCHER_H const fletcher_4_ops_t fletcher_4_ssse3_ops;
+#endif
+
+#if defined(HAVE_SSE4_1)
+_ZFS_FLETCHER_H const fletcher_4_ops_t fletcher_4_sse4_1_ops;
 #endif
 
 #if defined(HAVE_AVX) && defined(HAVE_AVX2)

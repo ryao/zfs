@@ -178,6 +178,9 @@ static const fletcher_4_ops_t *fletcher_4_impls[] = {
 #if defined(HAVE_SSE2) && defined(HAVE_SSSE3)
 	&fletcher_4_ssse3_ops,
 #endif
+#if defined(HAVE_SSE4_1)
+	&fletcher_4_sse4_1_ops,
+#endif
 #if defined(HAVE_AVX) && defined(HAVE_AVX2)
 	&fletcher_4_avx2_ops,
 #endif
