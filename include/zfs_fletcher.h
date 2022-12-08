@@ -97,7 +97,7 @@ typedef union fletcher_4_ctx {
 	zfs_fletcher_superscalar_t superscalar[4];
 
 #if defined(HAVE_SSE2) || (defined(HAVE_SSE2) && defined(HAVE_SSSE3))
-	zfs_fletcher_sse_t sse[4];
+	zfs_fletcher_sse_t sse[8];
 #endif
 #if defined(HAVE_AVX) && defined(HAVE_AVX2)
 	zfs_fletcher_avx_t avx[4];
