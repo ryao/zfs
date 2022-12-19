@@ -51,6 +51,10 @@ endif
 # Suppress unused-value warnings in sparc64 architecture headers
 ccflags-$(CONFIG_SPARC64) += -Wno-unused-value
 
+KBUILD_CFLAGS := $(filter-out -fconserve-stack,$(KBUILD_CFLAGS))
+KBUILD_CFLAGS := $(filter-out -Wimplicit-fallthrough=5,$(KBUILD_CFLAGS))
+KBUILD_CFLAGS := $(filter-out -Wno-maybe-uninitialized,$(KBUILD_CFLAGS))
+KBUILD_CFLAGS := $(filter-out -Wno-alloc-size-larger-than,$(KBUILD_CFLAGS))
 
 obj-$(CONFIG_ZFS) := spl.o zfs.o
 

@@ -593,9 +593,14 @@ AC_DEFUN([ZFS_LINUX_CONFTEST_MAKEFILE], [
 	dnl # Example command line to manually build source.
 	cat - <<_ACEOF >$file
 # Example command line to manually build source
-# make modules -C $LINUX_OBJ $ARCH_UM M=$PWD/build/$1
+# make modules -C $LINUX_OBJ $ARCH_UM M=$PWD/build/$1 V=1
 
-ccflags-y := -Werror $FRAME_LARGER_THAN
+KBUILD_CFLAGS := \$(filter-out -fconserve-stack,\$(KBUILD_CFLAGS))
+KBUILD_CFLAGS := \$(filter-out -Wimplicit-fallthrough=5,\$(KBUILD_CFLAGS))
+KBUILD_CFLAGS := \$(filter-out -Wno-maybe-uninitialized,\$(KBUILD_CFLAGS))
+KBUILD_CFLAGS := \$(filter-out -Wno-alloc-size-larger-than,\$(KBUILD_CFLAGS))
+
+ccflags-y := $FRAME_LARGER_THAN
 _ACEOF
 
 	dnl # Additional custom CFLAGS as requested.
@@ -661,7 +666,7 @@ AC_DEFUN([ZFS_LINUX_COMPILE], [
 	    KBUILD_MODPOST_NOFINAL="$5" KBUILD_MODPOST_WARN="$6"
 	    make modules -k -j$TEST_JOBS ${KERNEL_CC:+CC=$KERNEL_CC}
 	    ${KERNEL_LD:+LD=$KERNEL_LD} ${KERNEL_LLVM:+LLVM=$KERNEL_LLVM}
-	    CONFIG_MODULES=y CFLAGS_MODULE=-DCONFIG_MODULES
+	    CONFIG_MODULES=y CFLAGS_MODULE=-DCONFIG_MODULES CONFIG_FUNCTION_TRACER= CONFIG_CC_IS_GCC= CONFIG_CC_IMPLICIT_FALLTHROUGH=
 	    -C $LINUX_OBJ $ARCH_UM M=$PWD/$1 >$1/build.log 2>&1])
 	AS_IF([AC_TRY_COMMAND([$2])], [$3], [$4])
 ])

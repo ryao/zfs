@@ -53,7 +53,7 @@ FMAKE = env -u MAKEFLAGS make $(FMAKEFLAGS)
 modules-Linux:
 	mkdir -p $(sort $(dir $(spl-objs) $(spl-)))
 	mkdir -p $(sort $(dir $(zfs-objs) $(zfs-)))
-	$(MAKE) -C @LINUX_OBJ@ $(if @KERNEL_CC@,CC=@KERNEL_CC@) \
+	$(MAKE) -C @LINUX_OBJ@ \
 		$(if @KERNEL_LD@,LD=@KERNEL_LD@) $(if @KERNEL_LLVM@,LLVM=@KERNEL_LLVM@) \
 		M="$$PWD" @KERNEL_MAKE@ CONFIG_ZFS=m modules
 
