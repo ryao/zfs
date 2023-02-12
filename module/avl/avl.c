@@ -695,7 +695,7 @@ avl_remove(avl_tree_t *tree, void *data)
 		 */
 		tmp = *node;
 
-		*node = *delete;
+		memcpy(node, delete, sizeof (*node));
 		if (node->avl_child[left] == node)
 			node->avl_child[left] = &tmp;
 
