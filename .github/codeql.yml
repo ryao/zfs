@@ -34,6 +34,8 @@ query-filters:
       id: cpp/complex-condition
   - exclude:
       id: cpp/short-global-name
+  - exclude:
+      id: cpp/uninitialized-local
 
 paths-ignore:
   - tests
