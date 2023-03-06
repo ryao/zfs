@@ -119,6 +119,15 @@ main(int argc, char **argv)
 		input_i = lrand48();
 	}
 
+	/*
+	 * As a precaution, we restrict permissions to be no more permissive
+	 * than 644. Since we cannot lookup the existing umask without setting
+	 * one, we call umask twice. The second time sets any bits that were
+	 * already part of the umask that we unset on the first call.
+	 */
+	mode_t mode = umask(S_IEXEC|S_IWGRP|S_IXGRP|S_IWOTH|S_IXOTH);
+	(void) umask(S_IEXEC|S_IWGRP|S_IXGRP|S_IWOTH|S_IXOTH | mode);
+
 	FILE *fp = fopen(path, "wb");
 	if (!fp) {
 		perror("fopen");
