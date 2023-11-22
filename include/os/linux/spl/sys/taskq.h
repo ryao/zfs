@@ -62,15 +62,6 @@
 #define	TASKQID_INVALID		((taskqid_t)0)
 #define	TASKQID_INITIAL		((taskqid_t)1)
 
-/*
- * spin_lock(lock) and spin_lock_nested(lock,0) are equivalent,
- * so TQ_LOCK_DYNAMIC must not evaluate to 0
- */
-typedef enum tq_lock_role {
-	TQ_LOCK_GENERAL =	0,
-	TQ_LOCK_DYNAMIC =	1,
-} tq_lock_role_t;
-
 typedef unsigned long taskqid_t;
 typedef void (task_func_t)(void *);
 
@@ -100,7 +91,6 @@ typedef struct taskq {
 	struct list_head	tq_taskqs;	/* all taskq_t's */
 	spl_wait_queue_head_t	tq_work_waitq;	/* new work waitq */
 	spl_wait_queue_head_t	tq_wait_waitq;	/* wait waitq */
-	tq_lock_role_t		tq_lock_class;	/* class when taking tq_lock */
 	/* list node for the cpu hotplug callback */
 	struct hlist_node	tq_hp_cb_node;
 	boolean_t		tq_hp_support;

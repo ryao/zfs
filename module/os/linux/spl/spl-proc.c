@@ -204,7 +204,7 @@ taskq_seq_show_impl(struct seq_file *f, void *p, boolean_t allflag)
 	int i, j, have_lheads = 0;
 	unsigned long wflags, flags;
 
-	spin_lock_irqsave_nested(&tq->tq_lock, flags, tq->tq_lock_class);
+	spin_lock_irqsave(&tq->tq_lock, flags);
 	spin_lock_irqsave(&tq->tq_wait_waitq.lock, wflags);
 
 	/* get the various lists and check whether they're empty */
