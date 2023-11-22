@@ -735,6 +735,8 @@ taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
 	t->tqent_func = func;
 	t->tqent_arg = arg;
 	t->tqent_taskq = tq;
+	t->tqent_timer.function = NULL;
+	t->tqent_timer.expires = 0;
 
 	t->tqent_birth = jiffies;
 	DTRACE_PROBE1(taskq_ent__birth, taskq_ent_t *, t);
