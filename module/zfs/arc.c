@@ -1739,6 +1739,8 @@ arc_buf_alloc_l2only(size_t size, arc_buf_contents_t type, l2arc_dev_t *dev,
 	hdr->b_l2hdr.b_daddr = daddr;
 	hdr->b_l2hdr.b_arcs_state = arcs_state;
 
+	birth = hdr->b_birth;
+
 	return (hdr);
 }
 
