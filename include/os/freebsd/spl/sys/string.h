@@ -36,5 +36,6 @@ char	*strpbrk(const char *, const char *);
 void	 strident_canon(char *, size_t);
 void	 kmem_strfree(char *);
 char	*kmem_strdup(const char *s);
+void	*explicit_memset(void *s, int c, size_t n);
 
 #endif	/* _OPENSOLARIS_SYS_STRING_H_ */

@@ -41,4 +41,7 @@ strlcpy(char *dest, const char *src, size_t size)
 }
 #endif /* HAVE_KERNEL_STRLCPY */
 
+void *
+explicit_memset(void *s, int c, size_t n);
+
 #endif /* _SPL_STRING_H */

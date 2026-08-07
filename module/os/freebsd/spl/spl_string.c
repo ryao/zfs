@@ -136,3 +136,11 @@ kmem_scnprintf(char *restrict str, size_t size, const char *restrict fmt, ...)
 
 	return (n);
 }
+
+void *
+explicit_memset(void *s, int c, size_t n)
+{
+	memset(s, c, n);
+	__asm__ __volatile__("" :: "r"(s) : "memory");
+	return (s);
+}

@@ -297,6 +297,15 @@ ddi_copyin(const void *from, void *to, size_t len, int flags)
 }
 EXPORT_SYMBOL(ddi_copyin);
 
+void *
+explicit_memset(void *s, int c, size_t n)
+{
+	memset(s, c, n);
+	__asm__ __volatile__("" :: "r"(s) : "memory");
+	return (s);
+}
+EXPORT_SYMBOL(explicit_memset);
+
 /*
  * Post a uevent to userspace whenever a new vdev adds to the pool. It is
  * necessary to sync blkid information with udev, which zed daemon uses

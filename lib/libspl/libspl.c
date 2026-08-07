@@ -31,6 +31,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/misc.h>
+#include <sys/string.h>
 #include <sys/systm.h>
 #include <sys/utsname.h>
 #include "libspl_impl.h"
@@ -48,6 +49,14 @@ utsname_t *
 utsname(void)
 {
 	return (&hw_utsname);
+}
+
+void *
+explicit_memset(void *s, int c, size_t n)
+{
+	memset(s, c, n);
+	__asm__ __volatile__("" :: "r"(s) : "memory");
+	return (s);
 }
 
 void

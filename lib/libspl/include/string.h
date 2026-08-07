@@ -38,4 +38,7 @@ extern size_t strlcat(char *dst, const char *src, size_t dstsize);
 extern size_t strlcpy(char *dst, const char *src, size_t len);
 #endif
 
+void *
+explicit_memset(void *s, int c, size_t n);
+
 #endif

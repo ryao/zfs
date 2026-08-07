@@ -146,14 +146,6 @@ crypto_free_mode_ctx(void *ctx)
 	}
 }
 
-static void *
-explicit_memset(void *s, int c, size_t n)
-{
-	memset(s, c, n);
-	__asm__ __volatile__("" :: "r"(s) : "memory");
-	return (s);
-}
-
 /*
  * Clear sensitive data in the context and free allocated memory.
  *
