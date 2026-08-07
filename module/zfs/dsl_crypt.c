@@ -2589,7 +2589,7 @@ dsl_crypto_key_create_sync(uint64_t crypt, dsl_wrapping_key_t *wkey,
 	    DSL_CRYPTO_KEY_VERSION, sizeof (uint64_t), 1, &version, tx));
 
 	zio_crypt_key_destroy(&dck.dck_key);
-	memset(&dck.dck_key, 0, sizeof (zio_crypt_key_t));
+	explicit_memset(&dck.dck_key, 0, sizeof (zio_crypt_key_t));
 
 	return (dck.dck_obj);
 }
