@@ -22,6 +22,15 @@
 #include <stdint.h>
 #include <limits.h>
 
+#ifdef __linux__
+/*
+ * glibc puts major(), minor() and makedev() in this header. zfsd uses
+ * them to tell a CUSE control node from the kernel misc device. This
+ * file is earlier on the include path, so pull the system copy in.
+ */
+#include_next <sys/sysmacros.h>
+#endif
+
 /* common macros */
 #ifndef MIN
 #define	MIN(a, b)	((a) < (b) ? (a) : (b))

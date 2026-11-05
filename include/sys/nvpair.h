@@ -128,9 +128,9 @@ struct nv_alloc_ops {
 
 _SYS_NVPAIR_H const nv_alloc_ops_t *const nv_fixed_ops;
 _SYS_NVPAIR_H nv_alloc_t *const nv_alloc_nosleep;
+_SYS_NVPAIR_H nv_alloc_t *const nv_alloc_sleep;
 
 #if defined(_KERNEL)
-_SYS_NVPAIR_H nv_alloc_t *const nv_alloc_sleep;
 _SYS_NVPAIR_H nv_alloc_t *const nv_alloc_pushpage;
 #endif
 

@@ -140,7 +140,29 @@ typedef struct zcp_run_info {
 	 * The errno number returned to caller of zcp_eval().
 	 */
 	int		zri_result;
+
+#ifndef _KERNEL
+	/*
+	 * Userspace daemon only. The ioctl thread records the client
+	 * so the txg sync thread can abort the program when that
+	 * process is gone. issig() is never true in userspace, and
+	 * the sync thread cannot see the ioctl thread's TLS.
+	 * zri_cancel_check is the last gethrtime() sample.
+	 */
+	pid_t		zri_client_tgid;
+	uint64_t	zri_client_start;
+	uint64_t	zri_cancel_check;
+#endif
 } zcp_run_info_t;
+
+#ifndef _KERNEL
+typedef void (zfsd_zcp_watch_f)(zcp_run_info_t *);
+typedef boolean_t (zfsd_zcp_gone_f)(zcp_run_info_t *);
+
+extern zfsd_zcp_watch_f *zfsd_zcp_on_begin;
+extern zfsd_zcp_watch_f *zfsd_zcp_on_end;
+extern zfsd_zcp_gone_f *zfsd_zcp_client_gone;
+#endif
 
 zcp_run_info_t *zcp_run_info(lua_State *);
 zcp_cleanup_handler_t *zcp_register_cleanup(lua_State *, zcp_cleanup_t, void *);

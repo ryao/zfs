@@ -30,7 +30,16 @@ extern void zvol_create_minors(const char *);
 extern void zvol_remove_minors(spa_t *, const char *, boolean_t);
 extern void zvol_rename_minors(spa_t *, const char *, const char *, boolean_t);
 
-#ifdef _KERNEL
+#ifndef _KERNEL
+extern void (*zfsd_zvol_create_minors_impl)(const char *);
+extern void (*zfsd_zvol_remove_minors_impl)(spa_t *, const char *, boolean_t);
+extern void (*zfsd_zvol_rename_minors_impl)(spa_t *, const char *,
+    const char *, boolean_t);
+extern int (*zfsd_zvol_release_for_destroy_impl)(const char *);
+extern int zfsd_zvol_release_for_destroy(const char *);
+#endif
+
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 struct zvol_state;
 typedef struct zvol_state zvol_state_handle_t;
 
@@ -51,5 +60,5 @@ extern int zvol_init(void);
 extern void zvol_fini(void);
 extern int zvol_busy(void);
 
-#endif /* _KERNEL */
+#endif /* _KERNEL || ZFSD_BUILD */
 #endif /* _SYS_ZVOL_H */

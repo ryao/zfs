@@ -223,13 +223,15 @@ function mount_get_ro_rw # mountpoint
 		# tank/hello  /tank/hello  zfs  rw,nfsv4acls  0 0
 		mount -p | \
 		awk -v mountpoint="$mountpoint" '
-		    $2 != mountpoint || $3 != "zfs" { next }
+		    $2 != mountpoint || ($3 != "zfs" && $3 != "fuse.zfs" && \
+		    $3 != "fuse.uzfs") { next }
 		    $4 ~ /(^|,)ro(,|$)/ { print "ro" }
 		    $4 ~ /(^|,)rw(,|$)/ { print "rw" }'
 	else
 		# tank/hello  /tank/hello  zfs  rw,relatime,xattr,noacl,casesensitive  0 0
 		awk -v mountpoint="$mountpoint" '
-		    $2 != mountpoint || $3 != "zfs" { next }
+		    $2 != mountpoint || ($3 != "zfs" && $3 != "fuse.zfs" && \
+		    $3 != "fuse.uzfs") { next }
 		    $4 ~ /(^|,)ro(,|$)/ { print "ro" }
 		    $4 ~ /(^|,)rw(,|$)/ { print "rw" }' /proc/mounts
 	fi

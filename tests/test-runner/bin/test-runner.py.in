@@ -24,6 +24,7 @@ import os
 import sys
 import ctypes
 import re
+import signal
 import configparser
 import traceback
 
@@ -34,10 +35,11 @@ from pwd import getpwuid
 from select import select
 from subprocess import PIPE
 from subprocess import Popen
+from subprocess import DEVNULL
 from subprocess import check_output
 from subprocess import run
 from threading import Timer
-from time import time, CLOCK_MONOTONIC
+from time import time, sleep, CLOCK_MONOTONIC
 from os.path import exists
 
 BASEDIR = '/var/tmp/test_results'
@@ -201,7 +203,8 @@ User: %s
         - /proc/<PID>/stack output of process with highest CPU usage
         - Last lines strace-ing process with highest CPU usage
         """
-        if exists("/dev/kmsg"):
+        if (options.timeout_debug and not keyboard_interrupt and
+                exists("/dev/kmsg")):
             c = """
 TOP_OUT="$(COLUMNS=160 top -b -n 1 | head -n 30)"
 read -r PID CMD <<< $(echo "$TOP_OUT" | /usr/bin/awk \
@@ -234,14 +237,16 @@ echo "##### /proc/sysrq-trigger stack #####"
             out = data.stdout
             try:
                 kp = Popen([SUDO, "sh", "-c",
-                            "echo '" + out + "' > /dev/kmsg"])
+                            "echo '" + out + "' > /dev/kmsg"],
+                           stdout=DEVNULL, stderr=DEVNULL)
                 kp.wait()
 
                 """
                 Trigger kernel stack traces
                 """
                 kp = Popen([SUDO, "sh", "-c",
-                            "echo l > /proc/sysrq-trigger"])
+                            "echo l > /proc/sysrq-trigger"],
+                           stdout=DEVNULL, stderr=DEVNULL)
                 kp.wait()
             except Exception:
                 pass
@@ -251,18 +256,70 @@ echo "##### /proc/sysrq-trigger stack #####"
         sudo is required, this user was verified previously.
         """
         self.killed = True
-        do_sudo = len(self.user) != 0
-        signal = '-TERM'
-
-        cmd = [SUDO, KILL, signal, str(proc.pid)]
-        if not do_sudo:
-            del cmd[0]
-
+        """
+        The test is its own session. Kill the whole group, not just
+        the sudo pid: otherwise zdb/zpool are reparented to init,
+        keep the pool busy, and every later destroy fails EBUSY.
+        """
         try:
-            kp = Popen(cmd)
-            kp.wait()
-        except Exception:
-            pass
+            pgid = os.getpgid(proc.pid)
+        except OSError:
+            pgid = None
+        if pgid is not None:
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except OSError:
+                pass
+            sleep(1)
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+        """
+        A killed test never runs log_onexit, so its pool stays imported
+        and the next case fails at zpool create. Drop leftover pools.
+        """
+        if os.environ.get('TEST_ZFSD'):
+            """
+            A killed test skips log_onexit. zpool list often exits
+            non-zero while zdb is still in D state, so treat that as
+            "assume testpool" and keep destroying until list is empty.
+            """
+            zpool = '/opt/zfs/sbin/zpool' \
+                if os.path.exists('/opt/zfs/sbin/zpool') else 'zpool'
+            for _ in range(15):
+                try:
+                    cp = run([zpool, 'list', '-H', '-o', 'name'],
+                             stdout=PIPE, stderr=DEVNULL, text=True,
+                             timeout=20)
+                    listed = cp.stdout.split() \
+                        if cp.returncode == 0 else None
+                except Exception:
+                    listed = None
+                if listed is not None and len(listed) == 0:
+                    break
+                targets = list(listed) if listed else ['testpool']
+                if 'testpool' not in targets:
+                    targets.append('testpool')
+                for name in targets:
+                    try:
+                        run([zpool, 'destroy', '-f', name],
+                            stdout=DEVNULL, stderr=DEVNULL, timeout=20)
+                    except Exception:
+                        pass
+                sleep(1)
+            """
+            An exported label is invisible to zpool list after zfsd
+            restarts, and the next create fails immediately. Clear
+            labels on the ZTS disks (DISKS=vdc vdd ...).
+            """
+            for d in os.environ.get('DISKS', '').split():
+                path = d if d.startswith('/') else '/dev/' + d
+                try:
+                    run([zpool, 'labelclear', '-f', path],
+                        stdout=DEVNULL, stderr=DEVNULL, timeout=20)
+                except Exception:
+                    pass
 
         """
         If this is not a user-initiated kill and the test has not been
@@ -382,7 +439,8 @@ echo "##### /proc/sysrq-trigger stack #####"
             cmd = f'{SUDO} sh -c "echo clear > {KMEMLEAK_FILE}"'
             check_output(cmd, shell=True)
 
-        proc = Popen(privcmd, stdout=PIPE, stderr=PIPE)
+        proc = Popen(privcmd, stdout=PIPE, stderr=PIPE,
+                     start_new_session=True)
         # Allow a special timeout value of 0 to mean infinity
         if int(self.timeout) == 0:
             self.timeout = sys.maxsize / (10 ** 9)

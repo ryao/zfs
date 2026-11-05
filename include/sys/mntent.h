@@ -20,9 +20,30 @@
 #ifndef _SYS_MNTENT_H
 #define	_SYS_MNTENT_H
 
+#ifndef _KERNEL
+#include <string.h>
+#endif
+
 #define	MNTMAXSTR	128
 
 #define	MNTTYPE_ZFS	"zfs"		/* ZFS file system */
+#define	MNTTYPE_FUSE_ZFS	"fuse.zfs"	/* zfsd FUSE (native) */
+#define	MNTTYPE_FUSE_UZFS	"fuse.uzfs"	/* zfsd FUSE (uzfs) */
+
+/*
+ * Kernel zfs.ko mounts as "zfs". zfsd FUSE mounts as fuse.<subtype>.
+ * Matching the extra names is a no-op when those mounts are absent
+ * (ztest/zdb/kernel zfs).
+ */
+#ifndef _KERNEL
+#define	zfs_fstype_is_zfs(t) \
+	((t) != NULL && (strcmp((t), MNTTYPE_ZFS) == 0 || \
+	strcmp((t), MNTTYPE_FUSE_ZFS) == 0 || \
+	strcmp((t), MNTTYPE_FUSE_UZFS) == 0))
+#else
+#define	zfs_fstype_is_zfs(t) \
+	((t) != NULL && strcmp((t), MNTTYPE_ZFS) == 0)
+#endif
 
 #define	MOUNT_SUCCESS	0x00		/* Success */
 #define	MOUNT_USAGE	0x01		/* Invalid invocation or permissions */

@@ -42,6 +42,7 @@ typedef struct taskq_ent {
 	task_func_t		*tqent_func;
 	void			*tqent_arg;
 	uintptr_t		tqent_flags;
+	taskqid_t		tqent_id;
 } taskq_ent_t;
 
 typedef struct taskq {
@@ -61,6 +62,8 @@ typedef struct taskq {
 	int		tq_maxalloc_wait;
 	taskq_ent_t	*tq_freelist;
 	taskq_ent_t	tq_task;
+	taskqid_t	tq_nextid;
+	taskqid_t	tq_running_id;
 } taskq_t;
 
 #define	TQENT_FLAG_PREALLOC	0x1	/* taskq_dispatch_ent used */

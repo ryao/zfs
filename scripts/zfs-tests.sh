@@ -44,6 +44,7 @@ ZFS_DMESG="$STF_SUITE/callbacks/zfs_dmesg.ksh"
 UNAME=$(uname)
 RERUN=""
 KMEMLEAK=""
+TEST_ZFSD=""
 
 # Override some defaults if on FreeBSD
 if [ "$UNAME" = "FreeBSD" ] ; then
@@ -472,6 +473,22 @@ constrain_path() {
 	elif [ "$UNAME" = "FreeBSD" ] ; then
 		ln -fs /usr/local/bin/ksh93 "$STF_PATH/ksh"
 	fi
+
+	# zfsd: "mount -o remount,rw dataset mnt" never calls a mount.*
+	# helper, and Linux FUSE accepts it. The wrapper installed as
+	# $(sbindir)/mount returns EROFS for snapshots and read-only
+	# pools, matching kernel zfs_remount(). Refresh even when an
+	# older STF_PATH/mount symlink already points at util-linux.
+	if [ -n "${TEST_ZFSD:-}" ]; then
+		for _zm in /usr/local/sbin/mount /usr/local/bin/mount \
+		    /opt/zfs/sbin/mount; do
+			if [ -f "$_zm" ] && grep -q ZFSD_MOUNT_WRAPPER "$_zm" \
+			    2>/dev/null; then
+				ln -sfn "$_zm" "$STF_PATH/mount"
+				break
+			fi
+		done
+	fi
 }
 
 #
@@ -512,6 +529,12 @@ OPTIONS:
 		     is useful for splitting up the test amongst different
 		     runners.
 	-u USER     Run single test as USER (default: root)
+	--test-zfsd=native|fuse
+	            Drive the suite through zfsd instead of the kernel
+	            module. native occupies /dev/zfs (module must be
+	            absent); fuse uses /dev/uzfs. zfsd must already
+	            be running. Root is allowed. The kernel module is
+	            not loaded.
 
 EXAMPLES:
 # Run the default ${DEFAULT_RUNFILES//\.run/} suite of tests and output the configuration used.
@@ -532,6 +555,63 @@ $0 -x
 
 EOF
 }
+
+#
+# Long option: --test-zfsd=native|fuse  (must be stripped before getopts).
+# Iterate "$@" into a bash array so spaces inside other arguments are
+# preserved (FILTERED+=("$_arg"); set -- "${FILTERED[@]}").
+#
+FILTERED=()
+for _arg in "$@"; do
+	case "$_arg" in
+	--test-zfsd=native|--test-zfsd=fuse)
+		TEST_ZFSD="${_arg#*=}"
+		;;
+	--test-zfsd=*)
+		fail "invalid --test-zfsd (use native or fuse)"
+		;;
+	--test-zfsd)
+		fail "--test-zfsd requires =native or =fuse"
+		;;
+	*)
+		FILTERED+=("$_arg")
+		;;
+	esac
+done
+if [ "${#FILTERED[@]}" -gt 0 ]; then
+	set -- "${FILTERED[@]}"
+else
+	set --
+fi
+if [ -n "$TEST_ZFSD" ]; then
+	export TEST_ZFSD
+	# ZFSDEV selects the control node. Export it for native too so
+	# libzfs never autoloads zfs.ko during a zfsd ZTS run.
+	if [ "$TEST_ZFSD" = fuse ]; then
+		export ZFSDEV=fuse
+	elif [ "$TEST_ZFSD" = native ]; then
+		export ZFSDEV=native
+	fi
+	export ZFSD_PARAM_DIR="${ZFSD_PARAM_DIR:-/run/zfsd/parameters}"
+	# zfsd has no /sys/module/zfs. Drop dbgmsg and MMP fail
+	# callbacks so every FAIL does not cat missing sysfs files.
+	_tfc_out=
+	_save_ifs=$IFS
+	IFS=:
+	for _cb in $TESTFAIL_CALLBACKS; do
+		[ "$_cb" = "$ZFS_MMP" ] && continue
+		[ "$_cb" = "$ZFS_DBGMSG" ] && continue
+		[ -z "$_cb" ] && continue
+		if [ -n "$_tfc_out" ]; then
+			_tfc_out="$_tfc_out:$_cb"
+		else
+			_tfc_out="$_cb"
+		fi
+	done
+	IFS="$_save_ifs"
+	TESTFAIL_CALLBACKS="$_tfc_out"
+	unset _tfc_out _cb _save_ifs
+fi
 
 while getopts 'hvqxkKfScRmOn:d:Ds:r:?t:T:u:I:' OPTION; do
 	case $OPTION in
@@ -715,11 +795,44 @@ fi
 # be a normal user account, needs to be configured such that it can
 # run commands via sudo passwordlessly.
 #
-if [ "$(id -u)" = "0" ]; then
+# --test-zfsd is the exception: zfsd is a userspace daemon that must run
+# as root, so the suite is allowed to run as root and sudo is a no-op.
+#
+if [ -n "$TEST_ZFSD" ]; then
+	if [ "$(id -u)" = "0" ]; then
+		sudo() {
+			if [ "$1" = "-u" ]; then
+				u="$2"; shift 2
+				if command -v runuser >/dev/null 2>&1; then
+					runuser -u "$u" -- "$@"
+				else
+					# Keep argv literal. su -c "$*" re-parses
+					# whitespace and metacharacters.
+					su -s /bin/sh "$u" -c 'exec "$0" "$@"' -- "$@"
+				fi
+			else
+				"$@"
+			fi
+		}
+	elif [ "$(sudo id -un)" != "root" ]; then
+		fail "Passwordless sudo access required."
+	fi
+	case "$TEST_ZFSD" in
+	native)
+		[ -e /dev/zfs ] || fail "zfsd --native is not occupying /dev/zfs"
+		if [ -e /sys/module/zfs ]; then
+			fail "kernel zfs module is loaded; --test-zfsd=native requires it absent"
+		fi
+		;;
+	fuse)
+		[ -e /dev/uzfs ] || fail "zfsd --fuse is not occupying /dev/uzfs"
+		;;
+	esac
+elif [ "$(id -u)" = "0" ]; then
 	fail "This script must not be run as root."
 fi
 
-if [ "$(sudo id -un)" != "root" ]; then
+if [ -z "$TEST_ZFSD" ] && [ "$(sudo id -un)" != "root" ]; then
 	fail "Passwordless sudo access required."
 fi
 
@@ -739,12 +852,15 @@ fi
     "Missing $STF_SUITE/include/default.cfg file."
 
 #
-# Verify the ZFS module stack is loaded.
+# Verify the ZFS module stack is loaded -- unless we are testing zfsd,
+# in which case the kernel module must stay out of the way.
 #
-if [ "$STACK_TRACER" = "yes" ]; then
-	sudo "${ZFS_SH}" -S >/dev/null 2>&1
-else
-	sudo "${ZFS_SH}" >/dev/null 2>&1
+if [ -z "$TEST_ZFSD" ]; then
+	if [ "$STACK_TRACER" = "yes" ]; then
+		sudo "${ZFS_SH}" -S >/dev/null 2>&1
+	else
+		sudo "${ZFS_SH}" >/dev/null 2>&1
+	fi
 fi
 
 #
@@ -877,6 +993,9 @@ msg "TAGS:            $TAGS"
 msg "STACK_TRACER:    $STACK_TRACER"
 msg "Keep pool(s):    $KEEP"
 msg "Missing util(s): $STF_MISSING_BIN"
+if [ -n "$TEST_ZFSD" ]; then
+msg "TEST_ZFSD:       $TEST_ZFSD (kernel module skipped)"
+fi
 msg ""
 
 export STF_TOOLS

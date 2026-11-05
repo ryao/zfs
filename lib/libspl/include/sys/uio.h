@@ -63,6 +63,7 @@ typedef struct zfs_uio {
 	uint16_t	uio_fmode;	/* file mode flags */
 	uint16_t	uio_extflg;	/* extended flags */
 	ssize_t		uio_resid;	/* residual count */
+	size_t		uio_skip;	/* skipped bytes in current iovec */
 } zfs_uio_t;
 
 #define	zfs_uio_segflg(uio)		(uio)->uio_segflg

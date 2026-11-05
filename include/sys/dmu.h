@@ -917,7 +917,7 @@ void dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
     const void *buf, dmu_tx_t *tx, dmu_flags_t flags);
 int dmu_write_by_dnode(dnode_t *dn, uint64_t offset, uint64_t size,
     const void *buf, dmu_tx_t *tx, dmu_flags_t flags);
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 int dmu_read_uio(objset_t *os, uint64_t object, zfs_uio_t *uio, uint64_t size,
     dmu_flags_t flags);
 int dmu_read_uio_dbuf(dmu_buf_t *zdb, zfs_uio_t *uio, uint64_t size,

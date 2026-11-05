@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include <zone.h>
+#include <sys/cred.h>
 
 zoneid_t
 getzoneid(void)
@@ -29,6 +30,16 @@ getzoneid(void)
 	char path[PATH_MAX];
 	char buf[128] = { '\0' };
 	char *cp;
+
+	/*
+	 * libzfs maps Linux user namespaces onto Solaris zones.
+	 * zfsd is the whole ZFS world for this process, so a
+	 * container userns must not look like a non-global zone
+	 * (that blocks pool create / mount inside the daemon).
+	 * ztest/zdb/zfs leave zfsd_daemon at 0.
+	 */
+	if (zfsd_daemon)
+		return (GLOBAL_ZONEID);
 
 	int c = snprintf(path, sizeof (path), "/proc/self/ns/user");
 	/* This API doesn't have any error checking... */

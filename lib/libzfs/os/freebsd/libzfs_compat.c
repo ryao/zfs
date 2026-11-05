@@ -21,6 +21,8 @@
 #include <sys/module.h>
 #include <sys/stat.h>
 #include <sys/param.h>
+#include <stdlib.h>
+#include <sys/zfsd.h>
 
 #ifdef IN_BASE
 #define	ZFS_KMOD	"zfs"
@@ -215,6 +217,21 @@ libzfs_error_init(int error)
 int
 libzfs_load_module(void)
 {
+	struct stat st;
+
+	/*
+	 * zfsd --native already holds /dev/zfs (or --fuse /dev/uzfs).
+	 * Do not kldload the kernel module over an existing chrdev.
+	 */
+	if (stat(zfs_dev_path(), &st) == 0 && S_ISCHR(st.st_mode))
+		return (0);
+
+	/*
+	 * zfsd client: never kldload zfs.ko over a missing control node.
+	 */
+	if (getenv(ZFSDEV_ENV) != NULL || getenv("TEST_ZFSD") != NULL)
+		return (ENOENT);
+
 	/*
 	 * XXX: kldfind(ZFS_KMOD) would be nice here, but we retain
 	 * modfind("zfs") so out-of-base openzfs userland works with the

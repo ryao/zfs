@@ -617,8 +617,23 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 		if (wr_state == WR_COPIED &&
 		    resid > zil_max_copied_data(zilog))
 			wr_state = WR_NEED_COPY;
-		else if (wr_state == WR_INDIRECT)
-			len = MIN(blocksize - P2PHASE(off, blocksize), resid);
+		else if (wr_state == WR_INDIRECT) {
+			/*
+			 * blocksize 0 (unset z_blksz) makes P2PHASE(off, 0)
+			 * return off, and blocksize - off is negative. The
+			 * next pass then uses len 0 and this loop never
+			 * terminates. Force forward progress.
+			 */
+			if (blocksize == 0) {
+				len = resid;
+			} else {
+				len = MIN((ssize_t)blocksize -
+				    (ssize_t)P2PHASE(off, (uint64_t)blocksize),
+				    resid);
+			}
+			if (len <= 0)
+				len = resid;
+		}
 
 		itx = zil_itx_create(txtype, sizeof (*lr) +
 		    (wr_state == WR_COPIED ? len : 0));

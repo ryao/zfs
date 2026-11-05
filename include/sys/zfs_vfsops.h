@@ -17,7 +17,7 @@
 #ifndef _SYS_ZFS_VFSOPS_H
 #define	_SYS_ZFS_VFSOPS_H
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 #include <sys/zfs_vfsops_os.h>
 #endif
 

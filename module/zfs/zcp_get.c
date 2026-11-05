@@ -501,13 +501,20 @@ get_zap_prop(lua_State *state, dsl_dataset_t *ds, zfs_prop_t zfs_prop)
 		if (error != 0)
 			goto out;
 #ifdef _KERNEL
-		/* Fill in temporary value for prop, if applicable */
+		/*
+		 * Overlay in-memory mount options. The return is ignored:
+		 * if the dataset is not mounted, the persistent value stays.
+		 */
 		(void) zfs_get_temporary_prop(ds, zfs_prop, &numval, setpoint);
 #else
-		kmem_free(strval, ZAP_MAXVALUELEN);
-		return (luaL_error(state,
-		    "temporary properties only supported in kernel mode",
-		    prop_name));
+		/*
+		 * Userspace has no VFS temporary mount options, so the
+		 * persistent value is the value. Do not longjmp here.
+		 * zcp_get_system_prop() still holds ds, and luaL_error()
+		 * would skip that rele. The leaked bonus hold keeps the
+		 * freed DSL_DATASET dnode on the MOS, so the objset never
+		 * leaves spa_evicting_os_list and zpool destroy waits forever.
+		 */
 #endif
 		/* Push value to lua stack */
 		if (prop_type == PROP_TYPE_INDEX) {

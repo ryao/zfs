@@ -255,6 +255,60 @@ out:
 	return (err);
 }
 
+struct libzpool_tun_wrap {
+	libzpool_tunable_iter_t	cb;
+	void			*arg;
+};
+
+static int
+libzpool_tun_wrap(const zfs_tunable_t *zt, void *arg)
+{
+	struct libzpool_tun_wrap *w = arg;
+
+	if (zt == NULL || zt->zt_name == NULL)
+		return (0);
+	return (w->cb(zt->zt_name,
+	    zt->zt_perm == ZFS_TUNABLE_PERM_ZMOD_RW, w->arg));
+}
+
+void
+libzpool_tunable_iter(libzpool_tunable_iter_t cb, void *arg)
+{
+	struct libzpool_tun_wrap w;
+
+	w.cb = cb;
+	w.arg = arg;
+	zfs_tunable_iter(libzpool_tun_wrap, &w);
+}
+
+int
+libzpool_tunable_get(const char *name, char *buf, size_t n)
+{
+	const zfs_tunable_t *zt;
+
+	if (name == NULL || buf == NULL || n == 0)
+		return (EINVAL);
+	zt = zfs_tunable_lookup(name);
+	if (zt == NULL)
+		return (ENOENT);
+	return (zfs_tunable_get(zt, buf, n));
+}
+
+int
+libzpool_tunable_set(const char *name, const char *val)
+{
+	const zfs_tunable_t *zt;
+
+	if (name == NULL || val == NULL)
+		return (EINVAL);
+	zt = zfs_tunable_lookup(name);
+	if (zt == NULL)
+		return (ENOENT);
+	if (zt->zt_perm != ZFS_TUNABLE_PERM_ZMOD_RW)
+		return (EPERM);
+	return (zfs_tunable_set(zt, val));
+}
+
 static nvlist_t *
 refresh_config(void *unused, nvlist_t *tryconfig)
 {

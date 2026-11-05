@@ -97,17 +97,36 @@ See the other forms of
 .Nm zfs Cm allow
 for more information.
 .Pp
-Delegations are supported under Linux with the exception of
+Delegations are supported under Linux.
 .Sy mount ,
 .Sy unmount ,
 .Sy mountpoint ,
 .Sy canmount ,
-.Sy rename ,
 and
-.Sy share .
-These permissions cannot be delegated because the Linux
+.Sy rename
+cannot be delegated for the in-kernel module, because the Linux
 .Xr mount 8
 command restricts modifications of the global namespace to the root user.
+.Sy zfsd
+FUSE mounts are an exception: the daemon already changes the namespace,
+so those permissions are honored after a successful
+.Sy mount
+delegation.
+A non-root FUSE mount is forced
+.Cm nosuid,nodev
+and the mountpoint must already exist and be owned by the caller.
+.Sy share
+cannot be delegated for the in-kernel module, because Linux NFS/SMB
+export configuration is root-only.
+.Sy zfsd
+is an exception: after a successful
+.Sy share
+delegation the daemon writes
+.Pa /etc/exports.d/zfs.exports
+and runs
+.Nm exportfs
+or
+.Nm net usershare .
 .It Xo
 .Nm zfs
 .Cm allow

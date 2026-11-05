@@ -17,7 +17,7 @@
 #ifndef	_SYS_FS_ZFS_FUID_H
 #define	_SYS_FS_ZFS_FUID_H
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 #include <sys/sid.h>
 #include <sys/dmu.h>
 #include <sys/zfs_vfsops.h>
@@ -87,7 +87,7 @@ typedef struct zfs_fuid_info {
 	size_t	z_domain_str_sz; /* len of domain strings z_domain list */
 } zfs_fuid_info_t;
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 struct znode;
 extern uid_t zfs_fuid_map_id(zfsvfs_t *, uint64_t, cred_t *, zfs_fuid_type_t);
 extern void zfs_fuid_node_add(zfs_fuid_info_t **, const char *, uint32_t,

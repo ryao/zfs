@@ -420,6 +420,9 @@ boolean_t arc_warm;
  */
 uint64_t zfs_arc_max = 0;
 uint64_t zfs_arc_min = 0;
+#ifndef _KERNEL
+boolean_t zfs_arc_honor_max = B_FALSE;
+#endif
 static uint64_t zfs_arc_dnode_limit = 0;
 static uint_t zfs_arc_dnode_reduce_percent = 10;
 static uint_t zfs_arc_grow_retry = 0;
@@ -8073,6 +8076,38 @@ arc_set_limits(uint64_t allmem)
 	arc_c_max = arc_default_max(arc_c_min, allmem);
 }
 
+#ifndef _KERNEL
+extern void kmem_register_reclaim(void (*cb)(void));
+
+/*
+ * KM_SLEEP failed. ARC buffers are anonymous mappings charged against
+ * CommitLimit; under overcommit_memory=2 the kernel will not take them
+ * back, and a tight malloc retry never reaches the evictor. Drop the
+ * floor (normally half of arc_c_max) and wake eviction. Must not block
+ * on another allocation: the failing caller is still on this thread.
+ */
+static void
+arc_kmem_pressure(void)
+{
+	static __thread int in_pressure;
+	uint64_t floor, asize, to_free;
+
+	if (in_pressure)
+		return;
+	in_pressure = 1;
+
+	floor = MAX((uint64_t)(32ULL << 20), MIN_ARC_MAX / 4);
+	if (arc_c_min > floor)
+		arc_c_min = floor;
+	asize = aggsum_value(&arc_sums.arcstat_size);
+	if (asize > arc_c_min) {
+		to_free = MAX(asize / 4, 8ULL << 20);
+		(void) arc_reduce_target_size(to_free);
+	}
+	in_pressure = 0;
+}
+#endif
+
 void
 arc_init(void)
 {
@@ -8108,12 +8143,23 @@ arc_init(void)
 	}
 #else
 	/*
-	 * In userland, there's only the memory pressure that we artificially
-	 * create (see arc_available_memory()).  Don't let arc_c get too
-	 * small, because it can cause transactions to be larger than
-	 * arc_c, causing arc_tempreserve_space() to fail.
+	 * Default userland path: raise arc_c_min to half the default cap
+	 * (ztest/zdb/zhack). zfsd sets zfs_arc_honor_max so a smaller
+	 * zfs_arc_max is applied the same way the kernel does; otherwise
+	 * arc_tuning_update() ignores it as "below arc_c_min" and ARC
+	 * grows without bound when arc_available_memory() reports no
+	 * pressure (non-Linux, or vm.overcommit_memory=1).
 	 */
-	arc_c_min = MAX(arc_c_max / 2, 2ULL << SPA_MAXBLOCKSHIFT);
+	if (zfs_arc_honor_max && zfs_arc_max != 0 &&
+	    zfs_arc_max >= MIN_ARC_MAX && zfs_arc_max < allmem) {
+		arc_c_max = zfs_arc_max;
+		arc_c_min = MAX(zfs_arc_max / 2, 2ULL << SPA_MAXBLOCKSHIFT);
+		if (arc_c_min >= arc_c_max)
+			arc_c_min = MAX((uint64_t)(2ULL << SPA_MAXBLOCKSHIFT),
+			    MIN_ARC_MAX / 2);
+	} else {
+		arc_c_min = MAX(arc_c_max / 2, 2ULL << SPA_MAXBLOCKSHIFT);
+	}
 #endif
 
 	arc_c = arc_c_min;
@@ -8173,6 +8219,9 @@ arc_init(void)
 	    arc_evict_cb_check, arc_evict_cb, NULL, SEC2NSEC(1), defclsyspri);
 	arc_reap_zthr = zthr_create_timer("arc_reap",
 	    arc_reap_cb_check, arc_reap_cb, NULL, SEC2NSEC(1), minclsyspri);
+#ifndef _KERNEL
+	kmem_register_reclaim(arc_kmem_pressure);
+#endif
 
 	arc_warm = B_FALSE;
 

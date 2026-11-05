@@ -28,6 +28,10 @@ typedef off_t loff_t;
 
 typedef void zfs_file_t;
 
+#ifndef _KERNEL
+extern __thread int (*zfsd_file_steal_hook)(int fd);
+#endif
+
 typedef struct zfs_file_attr {
 	uint64_t	zfa_size;	/* file size */
 	mode_t		zfa_mode;	/* file type */

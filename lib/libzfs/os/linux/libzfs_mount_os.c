@@ -36,6 +36,7 @@
 #include <sys/vfs.h>
 #include <sys/dsl_crypt.h>
 #include <libzfs.h>
+#include <libzfs_core.h>
 
 #include "../../libzfs_impl.h"
 
@@ -321,7 +322,8 @@ do_mount(zfs_handle_t *zhp, const char *mntpt, const char *opts, int flags)
 	const char *src = zfs_get_name(zhp);
 	int error = 0;
 
-	if (!libzfs_envvar_is_set("ZFS_MOUNT_HELPER")) {
+	if (lzc_control_is_zfsd() ||
+	    !libzfs_envvar_is_set("ZFS_MOUNT_HELPER")) {
 		char badopt[MNT_LINE_MAX] = {0};
 		unsigned long mntflags = flags, zfsflags = 0;
 		char myopts[MNT_LINE_MAX] = {0};
@@ -332,6 +334,16 @@ do_mount(zfs_handle_t *zhp, const char *mntpt, const char *opts, int flags)
 		}
 		strlcat(myopts, opts, MNT_LINE_MAX);
 		zfs_adjust_mount_options(zhp, mntpt, myopts, NULL);
+		if (lzc_control_is_zfsd()) {
+			int zerr = lzc_zfsd_mount(src, mntpt, mntflags, myopts);
+			if (zerr == ENOTTY) {
+				/* /dev/zfs is the kernel module */
+			} else if (zerr != 0) {
+				return (zerr);
+			} else {
+				return (0);
+			}
+		}
 		if (mount(src, mntpt, MNTTYPE_ZFS, mntflags, myopts)) {
 			return (errno);
 		}
@@ -372,14 +384,23 @@ do_mount(zfs_handle_t *zhp, const char *mntpt, const char *opts, int flags)
 int
 do_unmount(zfs_handle_t *zhp, const char *mntpt, int flags)
 {
-	(void) zhp;
-
 	/*
 	 * MS_CRYPT and MS_OVERLAY are libzfs-internal flags; strip them so they
 	 * are never passed to umount2(2), which rejects unknown flag bits with
 	 * EINVAL. MS_FORCE/MS_DETACH are real umount2(2) flags and kept.
 	 */
 	flags &= ~(MS_CRYPT | MS_OVERLAY);
+
+	if (zhp != NULL && lzc_control_is_zfsd()) {
+		int zerr = lzc_zfsd_unmount(zfs_get_name(zhp), mntpt, flags);
+		if (zerr == ENOTTY) {
+			/* fall through to umount2 */
+		} else if (zerr != 0 && zerr != ENOENT) {
+			return (zerr);
+		} else {
+			return (0);
+		}
+	}
 
 	if (!libzfs_envvar_is_set("ZFS_MOUNT_HELPER")) {
 		int rv = umount2(mntpt, flags);
@@ -525,7 +546,7 @@ zfs_mount_setattr(zfs_handle_t *zhp, uint32_t nspflags)
 		return (0);
 
 	while (getmntent(mnttab, &entry) == 0) {
-		if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+		if (!zfs_fstype_is_zfs(entry.mnt_fstype))
 			continue;
 		if (strcmp(entry.mnt_special, zhp->zfs_name) != 0)
 			continue;
@@ -555,6 +576,13 @@ zfs_mount_setattr(zfs_handle_t *zhp, uint32_t nspflags)
 int
 zfs_mount_delegation_check(void)
 {
+	/*
+	 * Kernel Linux: mount(2) is CAP_SYS_ADMIN, so zfs create
+	 * refuses auto-mount for non-root. zfsd mounts from the
+	 * daemon; policy is dsl_deleg_access(MOUNT) there.
+	 */
+	if (lzc_control_is_zfsd())
+		return (0);
 	return ((geteuid() != 0) ? EACCES : 0);
 }
 

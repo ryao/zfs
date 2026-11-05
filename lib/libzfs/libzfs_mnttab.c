@@ -95,7 +95,7 @@ mnttab_update(libzfs_handle_t *hdl)
 		mnttab_node_t *mtn;
 		avl_index_t where;
 
-		if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+		if (!zfs_fstype_is_zfs(entry.mnt_fstype))
 			continue;
 
 		mtn = mnttab_node_alloc(hdl, entry.mnt_special,

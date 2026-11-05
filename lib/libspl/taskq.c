@@ -29,6 +29,7 @@
 #include <sys/string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdio.h>
 
 static pthread_key_t taskq_tsd;
 static pthread_once_t taskq_tsd_once = PTHREAD_ONCE_INIT;
@@ -61,7 +62,16 @@ again:	if ((t = tq->tq_freelist) != NULL && tq->tq_nalloc >= tq->tq_minalloc) {
 		tq->tq_freelist = t->tqent_next;
 	} else {
 		if (tq->tq_nalloc >= tq->tq_maxalloc) {
-			if (!(tqflags & KM_SLEEP))
+			/*
+			 * TQ_NOSLEEP is KM_NOSLEEP, which is 0 in this
+			 * libspl. "tqflags & TQ_NOSLEEP" is never true.
+			 * KM_SLEEP is the 0x0100 bit and TQ_SLEEP is
+			 * that bit. Sleep unless the caller omitted it.
+			 * Returning NULL here makes taskq_dispatch()
+			 * return TASKQID_INVALID and
+			 * vdev_file_io_start() aborts the process.
+			 */
+			if ((tqflags & KM_SLEEP) == 0)
 				return (NULL);
 
 			/*
@@ -116,12 +126,15 @@ taskqid_t
 taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t tqflags)
 {
 	taskq_ent_t *t;
+	taskqid_t id;
 
+	if (tq == NULL)
+		return (TASKQID_INVALID);
 	mutex_enter(&tq->tq_lock);
 	ASSERT(tq->tq_flags & TASKQ_ACTIVE);
 	if ((t = task_alloc(tq, tqflags)) == NULL) {
 		mutex_exit(&tq->tq_lock);
-		return (0);
+		return (TASKQID_INVALID);
 	}
 	if (tqflags & TQ_FRONT) {
 		t->tqent_next = tq->tq_task.tqent_next;
@@ -135,9 +148,21 @@ taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t tqflags)
 	t->tqent_func = func;
 	t->tqent_arg = arg;
 	t->tqent_flags = 0;
+	if (++tq->tq_nextid == TASKQID_INVALID)
+		tq->tq_nextid = 1;
+	id = tq->tq_nextid;
+	t->tqent_id = id;
 	cv_signal(&tq->tq_dispatch_cv);
 	mutex_exit(&tq->tq_lock);
-	return (1);
+	/*
+	 * Do not read t->tqent_id after dropping the lock. The worker
+	 * can finish a file vdev I/O and kmem_free the entry first, and
+	 * a kmem_zalloc on the other side of zdb -bbcc or mke2fs zeroes
+	 * it. vdev_file_io_start() then VERIFY-aborts. On zfsd that
+	 * abort is z_wr_iss inside do_coredump, which waits forever for
+	 * zfsd-nbd-doit stuck in sock_shutdown on the nbd tx_lock.
+	 */
+	return (id);
 }
 
 taskqid_t
@@ -191,6 +216,9 @@ taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
 	t->tqent_prev->tqent_next = t;
 	t->tqent_func = func;
 	t->tqent_arg = arg;
+	if (++tq->tq_nextid == TASKQID_INVALID)
+		tq->tq_nextid = 1;
+	t->tqent_id = tq->tq_nextid;
 	cv_signal(&tq->tq_dispatch_cv);
 	mutex_exit(&tq->tq_lock);
 }
@@ -198,6 +226,8 @@ taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
 void
 taskq_wait(taskq_t *tq)
 {
+	if (tq == NULL)
+		return;
 	mutex_enter(&tq->tq_lock);
 	while (tq->tq_task.tqent_next != &tq->tq_task || tq->tq_active != 0)
 		cv_wait(&tq->tq_wait_cv, &tq->tq_lock);
@@ -248,6 +278,7 @@ taskq_thread(void *arg)
 		t->tqent_next = NULL;
 		t->tqent_prev = NULL;
 		prealloc = t->tqent_flags & TQENT_FLAG_PREALLOC;
+		tq->tq_running_id = t->tqent_id;
 		mutex_exit(&tq->tq_lock);
 
 		rw_enter(&tq->tq_threadlock, RW_READER);
@@ -255,6 +286,8 @@ taskq_thread(void *arg)
 		rw_exit(&tq->tq_threadlock);
 
 		mutex_enter(&tq->tq_lock);
+		tq->tq_running_id = TASKQID_INVALID;
+		cv_broadcast(&tq->tq_wait_cv);
 		if (!prealloc)
 			task_free(tq, t);
 	}
@@ -298,6 +331,8 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 	tq->tq_maxalloc = maxalloc;
 	tq->tq_task.tqent_next = &tq->tq_task;
 	tq->tq_task.tqent_prev = &tq->tq_task;
+	tq->tq_nextid = 0;
+	tq->tq_running_id = TASKQID_INVALID;
 	tq->tq_threadlist = kmem_alloc(nthreads * sizeof (kthread_t *),
 	    KM_SLEEP);
 
@@ -308,9 +343,30 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 		mutex_exit(&tq->tq_lock);
 	}
 
-	for (t = 0; t < nthreads; t++)
-		VERIFY((tq->tq_threadlist[t] = thread_create_named(tq->tq_name,
-		    NULL, 0, taskq_thread, tq, 0, &p0, TS_RUN, pri)) != NULL);
+	for (t = 0; t < nthreads; t++) {
+		tq->tq_threadlist[t] = thread_create_named(tq->tq_name,
+		    NULL, 0, taskq_thread, tq, 0, &p0, TS_RUN, pri);
+		if (tq->tq_threadlist[t] != NULL)
+			continue;
+		(void) fprintf(stderr,
+		    "libspl: taskq %s: stopped after %d/%d threads\n",
+		    name, t, nthreads);
+		mutex_enter(&tq->tq_lock);
+		tq->tq_nthreads = t;
+		tq->tq_flags &= ~TASKQ_ACTIVE;
+		cv_broadcast(&tq->tq_dispatch_cv);
+		while (tq->tq_nthreads != 0)
+			cv_wait(&tq->tq_wait_cv, &tq->tq_lock);
+		mutex_exit(&tq->tq_lock);
+		kmem_free(tq->tq_threadlist, nthreads * sizeof (kthread_t *));
+		rw_destroy(&tq->tq_threadlock);
+		mutex_destroy(&tq->tq_lock);
+		cv_destroy(&tq->tq_dispatch_cv);
+		cv_destroy(&tq->tq_wait_cv);
+		cv_destroy(&tq->tq_maxalloc_cv);
+		kmem_free(tq, sizeof (taskq_t));
+		return (NULL);
+	}
 
 	return (tq);
 }
@@ -318,7 +374,11 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 void
 taskq_destroy(taskq_t *tq)
 {
-	int nthreads = tq->tq_nthreads;
+	int nthreads;
+
+	if (tq == NULL)
+		return;
+	nthreads = tq->tq_nthreads;
 
 	taskq_wait(tq);
 
@@ -402,7 +462,35 @@ taskq_of_curthread(void)
 int
 taskq_cancel_id(taskq_t *tq, taskqid_t id, boolean_t wait)
 {
-	(void) tq, (void) id, (void) wait;
+	taskq_ent_t *t;
+
+	if (tq == NULL || id == TASKQID_INVALID)
+		return (ENOENT);
+
+	mutex_enter(&tq->tq_lock);
+	for (t = tq->tq_task.tqent_next; t != &tq->tq_task; t = t->tqent_next) {
+		if (t->tqent_id != id)
+			continue;
+		t->tqent_prev->tqent_next = t->tqent_next;
+		t->tqent_next->tqent_prev = t->tqent_prev;
+		t->tqent_next = NULL;
+		t->tqent_prev = NULL;
+		if (!(t->tqent_flags & TQENT_FLAG_PREALLOC))
+			task_free(tq, t);
+		mutex_exit(&tq->tq_lock);
+		return (0);
+	}
+	if (tq->tq_running_id == id) {
+		if (!wait) {
+			mutex_exit(&tq->tq_lock);
+			return (EBUSY);
+		}
+		while (tq->tq_running_id == id)
+			cv_wait(&tq->tq_wait_cv, &tq->tq_lock);
+		mutex_exit(&tq->tq_lock);
+		return (0);
+	}
+	mutex_exit(&tq->tq_lock);
 	return (ENOENT);
 }
 

@@ -57,11 +57,18 @@ libspl_gettid(void)
 #endif
 
 static boolean_t libspl_assert_ok = B_FALSE;
+static void (*libspl_abort_cb)(void);
 
 void
 libspl_set_assert_ok(boolean_t val)
 {
 	libspl_assert_ok = val;
+}
+
+void
+libspl_set_abort_cb(void (*cb)(void))
+{
+	libspl_abort_cb = cb;
 }
 
 static pthread_mutex_t assert_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -102,5 +109,7 @@ libspl_assertf(const char *file, const char *func, int line,
 		return;
 	}
 #endif
+	if (libspl_abort_cb != NULL)
+		libspl_abort_cb();
 	abort();
 }

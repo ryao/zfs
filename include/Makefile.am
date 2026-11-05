@@ -178,6 +178,7 @@ KERNEL_H = \
 USER_H = \
 	libnvpair.h \
 	libzdb.h \
+	sys/zfsd.h \
 	libzfs.h \
 	libzfs_core.h \
 	libzfsbootenv.h \

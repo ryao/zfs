@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/inotify.h>
 #include <sys/mntent.h>
@@ -39,12 +40,33 @@
 #include "zfs_prop.h"
 #include <libzutil.h>
 #include <sys/zfs_sysfs.h>
+#include <sys/zfsd.h>
 
 #define	ZDIFF_SHARESDIR		"/.zfs/shares/"
 
 const char *
 libzfs_error_init(int error)
 {
+	/*
+	 * zfsd is not zfs.ko. Do not tell the operator to modprobe
+	 * when TEST_ZFSD / ZFSDEV selected a userspace control node.
+	 */
+	if (getenv("TEST_ZFSD") != NULL || getenv(ZFSDEV_ENV) != NULL ||
+	    strcmp(zfs_dev_path(), ZFS_DEV_FUSE) == 0) {
+		switch (error) {
+		case ENXIO:
+		case ENOENT:
+		case ENOEXEC:
+			return ("The zfsd control node "
+			    "is not available.\nIs zfsd running?");
+		case EACCES:
+			return ("Permission denied the "
+			    "ZFS utilities must be run as root.");
+		default:
+			return ("Failed to initialize "
+			    "the libzfs library.");
+		}
+	}
 	switch (error) {
 	case ENXIO:
 		return ("The ZFS modules are not "
@@ -102,17 +124,31 @@ in_container(void)
 /*
  * zfs(4) is loaded by udev if there's a fstype=zfs device present,
  * but if there isn't, load them automatically;
- * always wait for ZFS_DEV to appear via udev.
+ * always wait for the control node to appear via udev.
  *
  * Environment variables:
- * - ZFS_MODULE_TIMEOUT="<seconds>" - Seconds to wait for ZFS_DEV,
- *                                    defaults to 10, max. 10 min.
+ * - ZFS_MODULE_TIMEOUT="<seconds>" - Seconds to wait for the control
+ *                                    node, defaults to 10, max. 10 min.
  */
 int
 libzfs_load_module(void)
 {
-	if (access(ZFS_DEV, F_OK) == 0)
+	const char *dev = zfs_dev_path();
+	const char *zfsdev = getenv(ZFSDEV_ENV);
+	struct stat st;
+
+	if (stat(dev, &st) == 0 && S_ISCHR(st.st_mode))
 		return (0);
+
+	/*
+	 * zfsd client: never autoload zfs.ko. ZFSDEV selects the
+	 * control node (native=/dev/zfs, fuse=/dev/uzfs). TEST_ZFSD
+	 * is set by zfs-tests.sh --test-zfsd=. A missing node is a
+	 * dead daemon, not a missing kernel module.
+	 */
+	if (zfsdev != NULL || getenv("TEST_ZFSD") != NULL ||
+	    strcmp(dev, ZFS_DEV_FUSE) == 0)
+		return (ENOENT);
 
 	if (access(ZFS_SYSFS_DIR, F_OK) != 0) {
 		char *argv[] = {(char *)"modprobe", (char *)"zfs", NULL};
@@ -139,7 +175,7 @@ libzfs_load_module(void)
 		return (ENOENT);
 	inotify_add_watch(ino, ZFS_DEVDIR, IN_CREATE);
 
-	if (access(ZFS_DEV, F_OK) == 0) {
+	if (access(dev, F_OK) == 0) {
 		close(ino);
 		return (0);
 	} else if (seconds == 0) {
@@ -166,7 +202,7 @@ libzfs_load_module(void)
 		if (pfds[0].revents & POLLIN) {
 			verify(read(ino, ev, evsz) >
 			    sizeof (struct inotify_event));
-			if (strncmp(ev->name, &ZFS_DEV[sizeof (ZFS_DEVDIR)],
+			if (strncmp(ev->name, &dev[sizeof (ZFS_DEVDIR)],
 			    ev->len) == 0) {
 				ret = 0;
 				break;

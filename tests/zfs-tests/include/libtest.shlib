@@ -2449,11 +2449,15 @@ function add_user_linux #<group_name> <user_name> <basedir>
 
 	log_must useradd -g $group -d $basedir/$user -m $user
 
-	# Add new users to the same group and the command line utils.
-	# This allows them to be run out of the original users home
-	# directory as long as it permissioned to be group readable.
+	# Same group as the zfs binary so a 0750 install is runnable.
+	# Never add the user to group root: posixmode/posix ACL tests
+	# use a 007 directory owned by group root and expect "other"
+	# bits to apply. A supplementary root membership uses the
+	# group bits (---) instead and the tmpfs control case fails.
 	cmd_group=$(stat --format="%G" $(command -v zfs))
-	log_must usermod -a -G $cmd_group $user
+	if [[ -n $cmd_group && $cmd_group != root ]]; then
+		log_must usermod -a -G $cmd_group $user
+	fi
 
 	return 0
 }
@@ -3561,6 +3565,21 @@ function set_tunable_impl
 	case "$UNAME" in
 	Linux)
 		typeset zfs_tunables="/sys/module/zfs/parameters"
+		if [ -n "${TEST_ZFSD:-}" ]; then
+			zfs_tunables="${ZFSD_PARAM_DIR:-/run/zfsd/parameters}"
+			#
+			# zfsd only exports tunables it actually maps
+			# (libzpool ZFS_MODULE_PARAM). Do not mkdir or
+			# create the file: a missing name is kernel-only
+			# or unknown, and echo-creating it would make
+			# set/get succeed while the daemon never applied
+			# the value.
+			#
+			[ -f "$zfs_tunables/$tunable" ] || return 1
+		elif [ ! -d "$zfs_tunables" ]; then
+			zfs_tunables="${ZFSD_PARAM_DIR:-/run/zfsd/parameters}"
+			mkdir -p "$zfs_tunables" 2>/dev/null
+		fi
 		echo "$value" >"$zfs_tunables/$tunable"
 		;;
 	FreeBSD)
@@ -3635,7 +3654,14 @@ function get_tunable_impl
 	case "$UNAME" in
 	Linux)
 		typeset zfs_tunables="/sys/module/$module/parameters"
-		cat $zfs_tunables/$tunable
+		if [ -n "${TEST_ZFSD:-}" ] || [ ! -d "$zfs_tunables" ]; then
+			zfs_tunables="${ZFSD_PARAM_DIR:-/run/zfsd/parameters}"
+		fi
+		if [ -n "$check_only" ]; then
+			[ -e "$zfs_tunables/$tunable" ]
+			return
+		fi
+		cat "$zfs_tunables/$tunable"
 		;;
 	FreeBSD)
 		sysctl -n vfs.zfs.$tunable

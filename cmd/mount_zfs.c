@@ -21,11 +21,13 @@
 #include <sys/mntent.h>
 #include <sys/stat.h>
 #include <libzfs.h>
+#include <libzfs_core.h>
 #include <libzutil.h>
 #include <locale.h>
 #include <getopt.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
 
 #define	ZS_COMMENT	0x00000000	/* comment */
 #define	ZS_ZFSUTIL	0x00000001	/* caller is zfs(8) */
@@ -97,6 +99,82 @@ mtab_is_writeable(void)
 	return (1);
 }
 
+/*
+ * Last explicit ro/rw token wins. zfs_parse_mount_options() only ORs
+ * MS_RDONLY, so a later rw would otherwise leave the filesystem read-only.
+ */
+static boolean_t
+opts_want_rdonly(const char *opts)
+{
+	char *buf, *tok, *save;
+	boolean_t want = B_FALSE;
+
+	if (opts == NULL || opts[0] == '\0')
+		return (B_FALSE);
+	buf = strdup(opts);
+	if (buf == NULL)
+		return (B_FALSE);
+	for (tok = strtok_r(buf, ",", &save); tok != NULL;
+	    tok = strtok_r(NULL, ",", &save)) {
+		if (strcmp(tok, MNTOPT_RO) == 0)
+			want = B_TRUE;
+		else if (strcmp(tok, MNTOPT_RW) == 0)
+			want = B_FALSE;
+	}
+	free(buf);
+	return (want);
+}
+
+static boolean_t
+pool_is_readonly(libzfs_handle_t *hdl, const char *dataset)
+{
+	char pool[ZFS_MAX_DATASET_NAME_LEN];
+	const char *end = dataset;
+	zpool_handle_t *php;
+	size_t n;
+	uint64_t ro;
+
+	while (*end != '\0' && *end != '/' && *end != '@')
+		end++;
+	n = (size_t)(end - dataset);
+	if (n == 0 || n >= sizeof (pool))
+		return (B_FALSE);
+	(void) memcpy(pool, dataset, n);
+	pool[n] = '\0';
+	php = zpool_open_canfail(hdl, pool);
+	if (php == NULL)
+		return (B_FALSE);
+	ro = zpool_get_prop_int(php, ZPOOL_PROP_READONLY, NULL);
+	zpool_close(php);
+	return (ro != 0);
+}
+
+/*
+ * do_mount() parses again and rejects options -s already ignored.
+ * Drop those tokens so a sloppy helper mount of a pool vdev works.
+ */
+static void
+strip_unknown_mntopts(char *opts)
+{
+	char in[MNT_LINE_MAX];
+	char out[MNT_LINE_MAX];
+	char bad[MNT_LINE_MAX];
+	char *tok, *save;
+	unsigned long mf, zf;
+
+	(void) strlcpy(in, opts, sizeof (in));
+	out[0] = '\0';
+	for (tok = strtok_r(in, ",", &save); tok != NULL;
+	    tok = strtok_r(NULL, ",", &save)) {
+		if (zfs_parse_mount_options(tok, &mf, &zf, 0, bad, NULL) != 0)
+			continue;
+		if (out[0] != '\0')
+			(void) strlcat(out, ",", sizeof (out));
+		(void) strlcat(out, tok, sizeof (out));
+	}
+	(void) strlcpy(opts, out, MNT_LINE_MAX);
+}
+
 static int
 mtab_update(const char *dataset, const char *mntpoint, const char *type,
     const char *mntopts)
@@ -149,11 +227,24 @@ main(int argc, char **argv)
 	unsigned long mntflags = 0, zfsflags = 0, remount = 0;
 	int sloppy = 0, fake = 0, verbose = 0, nomtab = 0, zfsutil = 0;
 	int error, c;
+	int saved_errno = 0;
+	const char *argv0;
 
 	(void) setlocale(LC_ALL, "");
 	(void) setlocale(LC_NUMERIC, "C");
 
 	opterr = 0;
+
+	/*
+	 * util-linux runs /sbin/mount.fuse.zfs for "mount -o remount"
+	 * of an already-mounted fuse.zfs when only the mountpoint was
+	 * given. The option string then contains fuse tokens (user_id,
+	 * allow_other, ...) which are not ZFS mount options.
+	 */
+	argv0 = strrchr(argv[0], '/');
+	argv0 = (argv0 != NULL) ? argv0 + 1 : argv[0];
+	if (strcmp(argv0, "mount.fuse.zfs") == 0)
+		sloppy = 1;
 
 	/* check options */
 	while ((c = getopt_long(argc, argv, "sfnvo:h?", 0, 0)) != -1) {
@@ -258,7 +349,8 @@ main(int argc, char **argv)
 		return (MOUNT_USAGE);
 	}
 
-	if (sloppy || libzfs_envvar_is_set("ZFS_MOUNT_HELPER")) {
+	if ((sloppy || libzfs_envvar_is_set("ZFS_MOUNT_HELPER")) &&
+	    !lzc_control_is_zfsd()) {
 		zfs_adjust_mount_options(zhp, mntpoint, mntopts, mtabopt);
 	}
 
@@ -324,9 +416,46 @@ main(int argc, char **argv)
 		    "  mountopts:  \"%s\"\n  mtabopts:   \"%s\"\n",
 		    dataset, mntpoint, mntflags, zfsflags, mntopts, mtabopt);
 
+	if (sloppy && lzc_control_is_zfsd())
+		strip_unknown_mntopts(mntopts);
+
 	if (!fake) {
-		if (!remount && !sloppy &&
-		    !libzfs_envvar_is_set("ZFS_MOUNT_HELPER")) {
+		/*
+		 * Linux FUSE reconfigure accepts remount,rw. Kernel ZFS
+		 * (zfs_remount) returns EROFS for a snapshot or a pool
+		 * that is not writable. Do that check here, then let
+		 * mount(2) update only the VFS flag. zfs_mount_at()
+		 * would try to mount the dataset a second time.
+		 */
+		if (remount && lzc_control_is_zfsd()) {
+			boolean_t snap = (zfs_get_type(zhp) ==
+			    ZFS_TYPE_SNAPSHOT);
+			boolean_t ro = opts_want_rdonly(mntopts);
+
+			if (!ro && (snap || pool_is_readonly(g_zfs, dataset))) {
+				(void) fprintf(stderr, "filesystem '%s' "
+				    "cannot be remounted read-write\n",
+				    dataset);
+				saved_errno = EROFS;
+				error = -1;
+			} else {
+				unsigned long fl = MS_REMOUNT;
+
+				if (ro)
+					fl |= MS_RDONLY;
+				fl |= mntflags & (MS_NOSUID | MS_NODEV |
+				    MS_NOEXEC | MS_NOATIME);
+#ifdef MS_RELATIME
+				fl |= mntflags & MS_RELATIME;
+#endif
+				error = mount(dataset, mntpoint, MNTTYPE_ZFS,
+				    fl, NULL);
+				if (error)
+					saved_errno = errno;
+			}
+		} else if (lzc_control_is_zfsd() ||
+		    (!remount && !sloppy &&
+		    !libzfs_envvar_is_set("ZFS_MOUNT_HELPER"))) {
 			error = zfs_mount_at(zhp, mntopts, mntflags, mntpoint);
 			if (error) {
 				(void) fprintf(stderr, "zfs_mount_at() failed: "
@@ -338,6 +467,8 @@ main(int argc, char **argv)
 		} else {
 			error = mount(dataset, mntpoint, MNTTYPE_ZFS,
 			    mntflags, mntopts);
+			if (error)
+				saved_errno = errno;
 		}
 	}
 
@@ -345,6 +476,8 @@ main(int argc, char **argv)
 	libzfs_fini(g_zfs);
 
 	if (error) {
+		if (saved_errno != 0)
+			errno = saved_errno;
 		switch (errno) {
 		case ENOENT:
 			(void) fprintf(stderr, "mount point "

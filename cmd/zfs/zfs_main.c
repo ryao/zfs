@@ -7573,7 +7573,7 @@ share_mount(int op, int argc, char **argv)
 		}
 
 		while (getmntent(mnttab, &entry) == 0) {
-			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0 ||
+			if (!zfs_fstype_is_zfs(entry.mnt_fstype) ||
 			    strchr(entry.mnt_special, '@') != NULL)
 				continue;
 			if (json) {
@@ -7696,7 +7696,7 @@ unshare_unmount_path(int op, char *path, int flags, boolean_t is_manual)
 	}
 	path_inode = statbuf.st_ino;
 
-	if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) {
+	if (!zfs_fstype_is_zfs(entry.mnt_fstype)) {
 		(void) fprintf(stderr, "cannot %s '%s': not a ZFS "
 		    "filesystem\n", cmdname, path);
 		return (1);
@@ -7870,7 +7870,7 @@ unshare_unmount(int op, int argc, char **argv)
 		while (getmntent(mnttab, &entry) == 0) {
 
 			/* ignore non-ZFS entries */
-			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+			if (!zfs_fstype_is_zfs(entry.mnt_fstype))
 				continue;
 
 			/* ignore snapshots */

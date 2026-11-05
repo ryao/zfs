@@ -39,6 +39,13 @@
 /* Set to non-zero to avoid abort()ing on an assertion failure */
 extern void libspl_set_assert_ok(boolean_t val);
 
+/*
+ * Optional hook run once, just before abort(). zfsd uses it to shut
+ * down NBD sockets so a crashing thread is not stuck in do_coredump
+ * waiting for zfsd-nbd-doit.
+ */
+extern void libspl_set_abort_cb(void (*cb)(void));
+
 /* printf version of libspl_assert */
 extern void libspl_assertf(const char *file, const char *func, int line,
     const char *format, ...) NORETURN __attribute__((format(printf, 4, 5)));

@@ -2477,6 +2477,10 @@ spa_unload(spa_t *spa)
 	spa_config_exit(spa, SCL_ALL, spa);
 }
 
+#ifndef _KERNEL
+boolean_t zfs_tryimport_skip_aux = B_FALSE;
+#endif
+
 /*
  * Load (or re-load) the current list of vdevs describing the active spares for
  * this pool.  When this is called, we have some form of basic information in
@@ -2499,7 +2503,9 @@ spa_load_spares(spa_t *spa)
 	 * As spare vdevs are shared among open pools, we skip loading
 	 * them when we load the checkpointed state of the pool.
 	 */
-	if (!spa_writeable(spa))
+	if (!spa_writeable(spa) ||
+	    (spa->spa_load_state == SPA_LOAD_TRYIMPORT &&
+	    zfs_tryimport_skip_aux))
 		return;
 #endif
 
@@ -2632,7 +2638,9 @@ spa_load_l2cache(spa_t *spa)
 	 * pools, we skip loading them when we load the checkpointed
 	 * state of the pool.
 	 */
-	if (!spa_writeable(spa))
+	if (!spa_writeable(spa) ||
+	    (spa->spa_load_state == SPA_LOAD_TRYIMPORT &&
+	    zfs_tryimport_skip_aux))
 		return;
 #endif
 
@@ -6715,6 +6723,37 @@ retry:
 			return (SET_ERROR(ENOENT));
 		}
 
+#ifndef _KERNEL
+		/*
+		 * spa_config_load() puts every zpool.cache pool into the
+		 * namespace before any open. The kernel keeps a pool
+		 * whose disks are missing so the operator can see it.
+		 * Userspace zfsd is restarted while ZTS has already
+		 * deleted those files (alloc_class_013: zpool remove
+		 * kills zfsd, the watchdog restarts it, disk_cleanup
+		 * unlinks the file vdevs). vdev_file_open then fails
+		 * with ENOENT, but only EBADF used to drop the spa.
+		 * The name stayed reserved: zpool create returned
+		 * EEXIST ("pool already exists") and zpool destroy
+		 * returned ENOENT ("no such pool"). Every later test
+		 * that uses the name testpool failed.
+		 *
+		 * Drop the ghost only when the load never got past the
+		 * cache config. A failure after the MOS has been read
+		 * (config source SPA_CONFIG_SRC_MOS) is a real pool.
+		 */
+		if (error == ENOENT &&
+		    spa->spa_config_source == SPA_CONFIG_SRC_CACHEFILE) {
+			spa_unload(spa);
+			spa_deactivate(spa);
+			spa_write_cachefile(spa, B_TRUE, B_TRUE, B_FALSE);
+			spa_remove(spa);
+			if (locked)
+				spa_namespace_exit(FTAG);
+			return (SET_ERROR(ENOENT));
+		}
+#endif
+
 		if (error) {
 			/*
 			 * We can't open the pool, but we still have useful
@@ -7314,8 +7353,30 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	 */
 	spa_namespace_enter(FTAG);
 	if (spa_lookup(poolname) != NULL) {
+#ifndef _KERNEL
+		/*
+		 * The name may be a cache ghost that has never been
+		 * opened (see spa_open_common). Opening it drops the
+		 * spa when the vdev files are gone, so create can
+		 * reuse the name. A pool that actually loads is still
+		 * EEXIST.
+		 */
+		spa_namespace_exit(FTAG);
+		error = spa_open(poolname, &spa, FTAG);
+		if (error == 0) {
+			spa_close(spa, FTAG);
+			return (SET_ERROR(EEXIST));
+		}
+		spa_namespace_enter(FTAG);
+		if (spa_lookup(poolname) != NULL) {
+			spa_namespace_exit(FTAG);
+			return (SET_ERROR(EEXIST));
+		}
+		error = 0;
+#else
 		spa_namespace_exit(FTAG);
 		return (SET_ERROR(EEXIST));
+#endif
 	}
 
 	/*
@@ -7328,6 +7389,21 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa = spa_add(poolname, nvl, altroot);
 	fnvlist_free(nvl);
 	spa_activate(spa, spa_mode_global);
+#ifndef _KERNEL
+	/*
+	 * libspl taskq_create returns NULL when pthread_create gets
+	 * EAGAIN instead of aborting. Fail the ioctl so a commit-charge
+	 * spike (zdb next to zfsd, overcommit_memory=2) does not take
+	 * /dev/uzfs down for the rest of ZTS.
+	 */
+	if (spa->spa_zvol_taskq == NULL || spa->spa_metaslab_taskq == NULL ||
+	    spa->spa_prefetch_taskq == NULL || spa->spa_upgrade_taskq == NULL) {
+		spa_deactivate(spa);
+		spa_remove(spa);
+		spa_namespace_exit(FTAG);
+		return (SET_ERROR(ENOMEM));
+	}
+#endif
 
 	if (props && (error = spa_prop_validate(spa, props))) {
 		spa_deactivate(spa);
@@ -7973,6 +8049,19 @@ spa_export_common(const char *pool, int new_state, nvlist_t **oldconfig,
 	spa_condense_debug_cancel(spa);
 #endif
 	spa_async_suspend(spa);
+#ifndef _KERNEL
+	/*
+	 * Kernel idle zvol minors do not hold a spa ref, so
+	 * spa_refcount_zero can run before zvol_remove_minors.
+	 * Userspace NBD/ublk I/O owns the objset (dmu_objset_own).
+	 * Tear down those devices first: otherwise zpool destroy
+	 * is EBUSY, ZTS log_must_busy retries ~31s, and the leftover
+	 * pool fails every later test (alloc_class_013 cascade).
+	 */
+	zvol_remove_minors(spa, spa_name(spa), B_FALSE);
+	if (spa->spa_zvol_taskq != NULL)
+		taskq_wait(spa->spa_zvol_taskq);
+#endif
 
 	spa_namespace_enter(FTAG);
 

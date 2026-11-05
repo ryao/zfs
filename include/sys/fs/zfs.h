@@ -1723,6 +1723,10 @@ typedef enum zfs_ioc {
 	ZFS_IOC_USERNS_DETACH = ZFS_IOC_UNJAIL,	/* 0x86 (Linux) */
 	ZFS_IOC_SET_BOOTENV,			/* 0x87 */
 	ZFS_IOC_GET_BOOTENV,			/* 0x88 */
+	ZFS_IOC_ZFSD_MOUNT,			/* 0x89 zfsd */
+	ZFS_IOC_ZFSD_UNMOUNT,			/* 0x8a zfsd */
+	ZFS_IOC_ZFSD_SHARE,			/* 0x8b zfsd */
+	ZFS_IOC_ZFSD_UNSHARE,			/* 0x8c zfsd */
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

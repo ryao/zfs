@@ -34,6 +34,19 @@ struct spa;
 _LIBZPOOL_H void show_pool_stats(struct spa *);
 _LIBZPOOL_H int handle_tunable_option(const char *, boolean_t);
 
+/*
+ * Access libzpool's linker-set tunables from another DSO. The
+ * zfs_tunable_* symbols in libspl are hidden (each library that
+ * links libspl.a gets its own empty or full table). These wrap
+ * the copy compiled into libzpool.so, which is the one with the
+ * ZFS_MODULE_PARAM objects from module/zfs/*.c.
+ */
+typedef int (*libzpool_tunable_iter_t)(const char *name, boolean_t writable,
+    void *arg);
+_LIBZPOOL_H void libzpool_tunable_iter(libzpool_tunable_iter_t cb, void *arg);
+_LIBZPOOL_H int libzpool_tunable_get(const char *name, char *buf, size_t n);
+_LIBZPOOL_H int libzpool_tunable_set(const char *name, const char *val);
+
 #ifdef	__cplusplus
 }
 #endif

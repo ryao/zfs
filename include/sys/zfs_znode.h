@@ -177,7 +177,7 @@ extern int zfs_obj_to_pobj(objset_t *osp, sa_handle_t *hdl,
     sa_attr_type_t *sa_table, uint64_t *pobjp, int *is_xattrdir);
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop, uint64_t *value);
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 #include <sys/zfs_znode_impl.h>
 
 /*
@@ -282,6 +282,12 @@ extern int	zfs_init_fs(zfsvfs_t *, znode_t **);
 extern void	zfs_set_dataprop(objset_t *);
 extern void	zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *,
     dmu_tx_t *tx);
+#ifndef _KERNEL
+extern int zfsd_active;
+extern void zfsd_create_fs(objset_t *, cred_t *, nvlist_t *, dmu_tx_t *);
+extern void zfsd_set_create_fs(void (*)(objset_t *, cred_t *, nvlist_t *,
+    dmu_tx_t *));
+#endif
 extern void	zfs_tstamp_update_setup(znode_t *, uint_t, uint64_t [2],
     uint64_t [2]);
 extern void	zfs_grow_blocksize(znode_t *, uint64_t, dmu_tx_t *);

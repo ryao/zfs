@@ -53,6 +53,12 @@ extern void p0(void);
 
 #define	curproc		(&p0)
 
+static inline boolean_t
+zfs_proc_is_caller(proc_t *p)
+{
+	return (p == curproc);
+}
+
 #define	PS_NONE		-1
 
 typedef struct kthread kthread_t;

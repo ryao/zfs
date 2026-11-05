@@ -718,7 +718,7 @@ static int
 unshare_one(libzfs_handle_t *hdl, const char *name, const char *mountpoint,
     enum sa_protocol proto)
 {
-	int err = sa_disable_share(mountpoint, proto);
+	int err = sa_disable_share(name, mountpoint, proto);
 	if (err != SA_OK)
 		return (zfs_error_fmt(hdl, proto_table[proto].p_unshare_err,
 		    "cannot unshare '%s': %s",
@@ -1408,7 +1408,7 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 		 * Ignore non-ZFS entries.
 		 */
 		if (entry.mnt_fstype == NULL ||
-		    strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+		    !zfs_fstype_is_zfs(entry.mnt_fstype))
 			continue;
 
 		/*

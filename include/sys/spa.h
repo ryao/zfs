@@ -1334,6 +1334,15 @@ extern uint64_t zfs_deadman_synctime_ms;
 extern uint64_t zfs_deadman_ziotime_ms;
 extern uint64_t zfs_deadman_checktime_ms;
 
+#ifndef _KERNEL
+/*
+ * zfsd sets this so spa_load_spares/l2cache skip vdev opens during
+ * SPA_LOAD_TRYIMPORT. The load-state enum itself is shared with the
+ * kernel module and ztest; do not overload TRYIMPORT for that.
+ */
+extern boolean_t zfs_tryimport_skip_aux;
+#endif
+
 extern kmem_cache_t *zio_buf_cache[];
 extern kmem_cache_t *zio_data_buf_cache[];
 

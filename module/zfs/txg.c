@@ -506,6 +506,16 @@ txg_has_quiesced_to_sync(dsl_pool_t *dp)
 	return (tx->tx_quiesced_txg != 0);
 }
 
+#ifndef _KERNEL
+static __thread boolean_t txg_sync_thr;
+
+boolean_t
+txg_thread_is_syncing(void)
+{
+	return (txg_sync_thr);
+}
+#endif
+
 static __attribute__((noreturn)) void
 txg_sync_thread(void *arg)
 {
@@ -515,6 +525,9 @@ txg_sync_thread(void *arg)
 	callb_cpr_t cpr;
 	clock_t start, delta;
 
+#ifndef _KERNEL
+	txg_sync_thr = B_TRUE;
+#endif
 	(void) spl_fstrans_mark();
 	txg_thread_enter(tx, &cpr);
 

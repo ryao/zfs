@@ -40,6 +40,7 @@
 #include <sys/mnttab.h>
 #include <sys/errno.h>
 #include <libzfs.h>
+#include <libzfs_core.h>
 
 #include "../../libzfs_impl.h"
 
@@ -83,6 +84,17 @@ do_mount(zfs_handle_t *zhp, const char *mntpt, const char *opts, int flags)
 	assert(mntpt != NULL);
 	assert(opts != NULL);
 
+	if (lzc_control_is_zfsd()) {
+		int zerr = lzc_zfsd_mount(spec, mntpt, flags, opts);
+		if (zerr == ENOTTY) {
+			/* fall through to nmount */
+		} else if (zerr != 0) {
+			return (zerr);
+		} else {
+			return (0);
+		}
+	}
+
 	tofree = optstr = strdup(opts);
 	assert(optstr != NULL);
 
@@ -110,13 +122,23 @@ do_mount(zfs_handle_t *zhp, const char *mntpt, const char *opts, int flags)
 int
 do_unmount(zfs_handle_t *zhp, const char *mntpt, int flags)
 {
-	(void) zhp;
 
 	/*
 	 * MS_CRYPT and MS_OVERLAY are libzfs-internal flags; keep them out of
 	 * the unmount(2) syscall. MS_FORCE/MS_DETACH are real flags and kept.
 	 */
 	flags &= ~(MS_CRYPT | MS_OVERLAY);
+
+	if (zhp != NULL && lzc_control_is_zfsd()) {
+		int zerr = lzc_zfsd_unmount(zfs_get_name(zhp), mntpt, flags);
+		if (zerr == ENOTTY) {
+			/* fall through to unmount(2) */
+		} else if (zerr != 0 && zerr != ENOENT) {
+			return (zerr);
+		} else {
+			return (0);
+		}
+	}
 
 	if (unmount(mntpt, flags) < 0)
 		return (errno);

@@ -19,6 +19,13 @@
 
 # $1: number of lines to output (default: 40)
 typeset lines=${1:-40}
+
+# zfsd has no kernel MMP history. --test-zfsd=native|fuse exports
+# TEST_ZFSD; do not probe Linux sysfs (wrong on FreeBSD).
+if [ -n "${TEST_ZFSD:-}" ]; then
+	exit 0
+fi
+
 typeset history=$(</sys/module/zfs/parameters/zfs_multihost_history)
 
 if [ $history -eq 0 ]; then

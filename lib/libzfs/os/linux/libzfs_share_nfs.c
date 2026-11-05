@@ -487,7 +487,7 @@ static boolean_t
 nfs_is_shared(sa_share_impl_t impl_share)
 {
 	if (!nfs_available())
-		return (SA_SYSTEM_ERR);
+		return (B_FALSE);
 
 	return (nfs_is_shared_impl(ZFS_EXPORTS_FILE, impl_share));
 }

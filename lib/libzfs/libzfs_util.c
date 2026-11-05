@@ -1100,7 +1100,10 @@ libzfs_init(void)
 		return (NULL);
 	}
 
-	if ((hdl->libzfs_fd = open(ZFS_DEV, O_RDWR|O_EXCL|O_CLOEXEC)) < 0) {
+	int oflags = O_RDWR | O_EXCL | O_CLOEXEC;
+	const char *zdev = zfs_dev_path();
+
+	if ((hdl->libzfs_fd = open(zdev, oflags)) < 0) {
 		regfree(&hdl->libzfs_urire);
 		free(hdl);
 		return (NULL);
@@ -1213,7 +1216,7 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, const char *path, zfs_type_t argtype)
 	if (getextmntent(path, &entry, &statbuf) != 0)
 		return (NULL);
 
-	if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) {
+	if (!zfs_fstype_is_zfs(entry.mnt_fstype)) {
 		(void) fprintf(stderr, "'%s': not a ZFS filesystem\n",
 		    path);
 		return (NULL);

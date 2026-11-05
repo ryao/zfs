@@ -84,7 +84,11 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef __linux__
+#include <sys/sysmacros.h>
+#endif
 #include <sys/zfs_ioctl.h>
+#include <sys/zfsd.h>
 #if __FreeBSD__
 #define	BIG_PIPE_SIZE (64 * 1024) /* From sys/pipe.h */
 #endif
@@ -96,6 +100,44 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static int g_refcount;
 
 static int g_ioc_trace = 0;
+
+const char *
+zfs_dev_path(void)
+{
+	const char *e = getenv(ZFSDEV_ENV);
+
+	if (e != NULL && strcmp(e, ZFSDEV_FUSE) == 0)
+		return (ZFS_DEV_FUSE);
+	return (ZFS_DEV);
+}
+
+/*
+ * True when this process's control node is zfsd, not zfs.ko.
+ * /dev/uzfs is always zfsd. Missing /sys/module/zfs means the
+ * kernel module is not loaded, so /dev/zfs is zfsd --native.
+ */
+int
+lzc_control_is_zfsd(void)
+{
+#ifdef __linux__
+	struct stat st;
+#ifndef	MISC_MAJOR
+#define	MISC_MAJOR	10
+#endif
+	if (strcmp(zfs_dev_path(), ZFS_DEV_FUSE) == 0)
+		return (1);
+	/*
+	 * Kernel zfs.ko publishes /dev/zfs as misc major 10. zfsd's
+	 * CUSE node uses a different major. Missing /sys is not
+	 * enough: a container without /sys can still talk to zfs.ko.
+	 */
+	if (stat(zfs_dev_path(), &st) == 0 && S_ISCHR(st.st_mode))
+		return (major(st.st_rdev) != MISC_MAJOR);
+	return (0);
+#else
+	return (0);
+#endif
+}
 
 #ifdef ZFS_DEBUG
 static zfs_ioc_t fail_ioc_cmd = ZFS_IOC_LAST;
@@ -138,7 +180,7 @@ libzfs_core_init(void)
 {
 	(void) pthread_mutex_lock(&g_lock);
 	if (g_refcount == 0) {
-		g_fd = open(ZFS_DEV, O_RDWR|O_CLOEXEC);
+		g_fd = open(zfs_dev_path(), O_RDWR|O_CLOEXEC);
 		if (g_fd < 0) {
 			(void) pthread_mutex_unlock(&g_lock);
 			return (errno);
@@ -206,6 +248,130 @@ lzc_ioctl_fd(int fd, unsigned long ioc, zfs_cmd_t *zc)
 
 	errno = err;
 	return (rc);
+}
+
+int
+lzc_zfsd_mount(const char *ds, const char *mnt, uint64_t flags,
+    const char *opts)
+{
+	zfs_cmd_t zc;
+	size_t mlen, olen;
+
+	memset(&zc, 0, sizeof (zc));
+	if (ds == NULL || mnt == NULL)
+		return (EINVAL);
+	if (opts == NULL)
+		opts = "";
+	(void) strlcpy(zc.zc_name, ds, sizeof (zc.zc_name));
+	mlen = strlen(mnt) + 1;
+	olen = strlen(opts) + 1;
+	if (mlen + olen > sizeof (zc.zc_value))
+		return (E2BIG);
+	(void) memcpy(zc.zc_value, mnt, mlen);
+	(void) memcpy(zc.zc_value + mlen, opts, olen);
+	zc.zc_cookie = flags;
+	if (lzc_ioctl_fd(g_fd, ZFSD_IOC_MOUNT, &zc) != 0)
+		return (errno);
+	return (0);
+}
+
+int
+lzc_zfsd_unmount(const char *ds, const char *mnt, uint64_t flags)
+{
+	zfs_cmd_t zc = { { 0 } };
+
+	if (ds != NULL)
+		(void) strlcpy(zc.zc_name, ds, sizeof (zc.zc_name));
+	if (mnt != NULL)
+		(void) strlcpy(zc.zc_value, mnt, sizeof (zc.zc_value));
+	zc.zc_cookie = flags;
+	if (lzc_ioctl_fd(g_fd, ZFSD_IOC_UNMOUNT, &zc) != 0)
+		return (errno);
+	return (0);
+}
+
+static int
+lzc_zfsd_share_pack(zfs_cmd_t *zc, const char *ds, const char *mnt,
+    const char *opts)
+{
+	size_t mlen, olen;
+
+	memset(zc, 0, sizeof (*zc));
+	if (ds != NULL)
+		(void) strlcpy(zc->zc_name, ds, sizeof (zc->zc_name));
+	if (mnt == NULL)
+		mnt = "";
+	if (opts == NULL)
+		opts = "";
+	mlen = strlen(mnt) + 1;
+	olen = strlen(opts) + 1;
+	if (mlen + olen > sizeof (zc->zc_value))
+		return (E2BIG);
+	(void) memcpy(zc->zc_value, mnt, mlen);
+	(void) memcpy(zc->zc_value + mlen, opts, olen);
+	if (olen <= sizeof (zc->zc_string))
+		(void) strlcpy(zc->zc_string, opts, sizeof (zc->zc_string));
+	return (0);
+}
+
+int
+lzc_zfsd_share(const char *ds, const char *mnt, const char *opts,
+    uint64_t proto)
+{
+	zfs_cmd_t zc;
+	int err;
+
+	if (ds == NULL || mnt == NULL)
+		return (EINVAL);
+	err = lzc_zfsd_share_pack(&zc, ds, mnt, opts);
+	if (err != 0)
+		return (err);
+	zc.zc_cookie = proto;
+	zc.zc_perm_action = 0;
+	if (lzc_ioctl_fd(g_fd, ZFSD_IOC_SHARE, &zc) != 0)
+		return (errno);
+	return (0);
+}
+
+int
+lzc_zfsd_unshare(const char *ds, const char *mnt, uint64_t proto)
+{
+	zfs_cmd_t zc;
+	int err;
+
+	if (mnt == NULL)
+		return (EINVAL);
+	err = lzc_zfsd_share_pack(&zc, ds, mnt, NULL);
+	if (err != 0)
+		return (err);
+	zc.zc_cookie = proto;
+	if (lzc_ioctl_fd(g_fd, ZFSD_IOC_UNSHARE, &zc) != 0)
+		return (errno);
+	return (0);
+}
+
+int
+lzc_zfsd_share_commit(uint64_t proto)
+{
+	zfs_cmd_t zc = { { 0 } };
+
+	zc.zc_cookie = proto;
+	zc.zc_perm_action = 2;
+	if (lzc_ioctl_fd(g_fd, ZFSD_IOC_SHARE, &zc) != 0)
+		return (errno);
+	return (0);
+}
+
+int
+lzc_zfsd_share_truncate(uint64_t proto)
+{
+	zfs_cmd_t zc = { { 0 } };
+
+	zc.zc_cookie = proto;
+	zc.zc_perm_action = 3;
+	if (lzc_ioctl_fd(g_fd, ZFSD_IOC_SHARE, &zc) != 0)
+		return (errno);
+	return (0);
 }
 
 static int

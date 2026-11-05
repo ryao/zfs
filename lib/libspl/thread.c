@@ -18,9 +18,13 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <sys/thread.h>
 #include <sys/sysmacros.h>
 #include <sys/errno.h>
@@ -292,7 +296,39 @@ zk_thread_create(const char *name, kthread_func_t func, void *arg,
 	 * anyway.
 	 */
 	pthread_t tid;
-	VERIFY0(pthread_create(&tid, &attr, zk_thread_trampoline, t));
+	int err = EAGAIN;
+	int tries;
+
+	/*
+	 * overcommit_memory=2 returns EAGAIN when the stack cannot be
+	 * committed. Retry, then a smaller stack. Return NULL so the
+	 * pool create fails instead of aborting zfsd.
+	 */
+	for (tries = 0; tries < 30 && (err == EAGAIN || err == ENOMEM); tries++) {
+		err = pthread_create(&tid, &attr, zk_thread_trampoline, t);
+		if (err != 0 && (err == EAGAIN || err == ENOMEM))
+			(void) usleep(100000);
+	}
+	if ((err == EAGAIN || err == ENOMEM) && stksize > TS_STACK_MAX) {
+		stksize = TS_STACK_MAX;
+		if (pthread_attr_setstacksize(&attr, stksize) == 0) {
+			for (tries = 0; tries < 10 &&
+			    (err == EAGAIN || err == ENOMEM); tries++) {
+				err = pthread_create(&tid, &attr,
+				    zk_thread_trampoline, t);
+				if (err != 0 && (err == EAGAIN || err == ENOMEM))
+					(void) usleep(100000);
+			}
+		}
+	}
+	if (err != 0) {
+		(void) fprintf(stderr,
+		    "libspl: zk_thread_create(%s) failed: %s\n",
+		    name != NULL ? name : "?", strerror(err));
+		zk_thread_free(t);
+		(void) pthread_attr_destroy(&attr);
+		return (NULL);
+	}
 
 	if (joinable)
 		t->t_tid = tid;

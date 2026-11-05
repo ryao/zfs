@@ -19,6 +19,12 @@
 # $1: number of lines to output (default: 200)
 typeset lines=${1:-200}
 
+# zfsd has no kernel dbgmsg kstat. --test-zfsd=native|fuse exports
+# TEST_ZFSD; do not probe Linux proc (wrong on FreeBSD).
+if [ -n "${TEST_ZFSD:-}" ]; then
+	exit 0
+fi
+
 echo "================================================================="
 echo " Tailing last $lines lines of zfs_dbgmsg log"
 echo "================================================================="

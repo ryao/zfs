@@ -16,12 +16,33 @@
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  */
 
-#ifndef _SYS_ZONE_H
+#ifndef	_SYS_ZONE_H
 #define	_SYS_ZONE_H
 
 #define	zone_dataset_visible(x, y)	(1)
 
 #define	INGLOBALZONE(z)			(1)
+
+#define	is_system_labeled()		(0)
+
+typedef enum {
+	ZONE_OP_CREATE,
+	ZONE_OP_SNAPSHOT,
+	ZONE_OP_CLONE,
+	ZONE_OP_DESTROY,
+	ZONE_OP_RENAME,
+	ZONE_OP_SETPROP
+} zone_uid_op_t;
+
+typedef enum {
+	ZONE_ADMIN_NOT_APPLICABLE,
+	ZONE_ADMIN_ALLOWED,
+	ZONE_ADMIN_DENIED
+} zone_admin_result_t;
+
+#define	zone_dataset_admin_check(d, o, a)	(ZONE_ADMIN_NOT_APPLICABLE)
+#define	zone_dataset_attach_uid(c, d, u)	(0)
+#define	zone_dataset_detach_uid(c, d, u)	(0)
 
 extern uint32_t zone_get_hostid(void *zonep);
 

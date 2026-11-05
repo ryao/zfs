@@ -56,6 +56,9 @@ ztest_LDADD = \
 ztest_LDADD += -lm
 
 
+include $(srcdir)/%D%/zfsd/Makefile.am
+
+
 include $(srcdir)/%D%/raidz_test/Makefile.am
 include $(srcdir)/%D%/zdb/Makefile.am
 include $(srcdir)/%D%/zfs/Makefile.am
@@ -76,6 +79,19 @@ mount_zfs_LDADD = \
 	libzfs.la \
 	libzfs_core.la \
 	libnvpair.la
+
+dist_noinst_SCRIPTS += %D%/zfsd-mount
+
+# fuse.zfs remounts (mountpoint only) are dispatched to mount.fuse.zfs.
+# "mount -o remount dataset mnt" skips helpers; sbin/mount is that check
+# and is what the ZTS constrained path finds before /usr/bin/mount.
+cmd-mount-zfs-install-exec-hook:
+	$(MKDIR_P) $(DESTDIR)$(mounthelperdir)
+	cd $(DESTDIR)$(mounthelperdir) && $(LN_S) -f mount.zfs mount.fuse.zfs
+	$(MKDIR_P) $(DESTDIR)$(sbindir)
+	$(INSTALL) -m 755 $(srcdir)/%D%/zfsd-mount $(DESTDIR)$(sbindir)/mount
+
+INSTALL_EXEC_HOOKS += cmd-mount-zfs-install-exec-hook
 
 CPPCHECKTARGETS += raidz_test
 

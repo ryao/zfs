@@ -39,8 +39,9 @@
 #include <libspl.h>
 #include <libzpool.h>
 #include <sys/zfs_context.h>
-#include <sys/zfs_onexit.h>
 #include <sys/zfs_vfsops.h>
+#include <sys/zfs_znode.h>
+#include <sys/zfs_onexit.h>
 #include <sys/zstd/zstd.h>
 #include <sys/zvol.h>
 #include <zfs_fletcher.h>
@@ -429,10 +430,20 @@ kernel_fini(void)
 	libspl_fini();
 }
 
+/*
+ * zfs_onexit in the kernel is file-close, not "watch this PID."
+ * zfsd registers implementations at startup; ztest leaves these NULL
+ * so a missing cleanup_fd is just minor 0.
+ */
+zfs_file_t *(*zfsd_onexit_fd_hold_impl)(int, minor_t *);
+void (*zfsd_onexit_fd_rele_impl)(zfs_file_t *);
+int (*zfsd_onexit_add_cb_impl)(minor_t, void (*)(void *), void *, uintptr_t *);
+
 zfs_file_t *
 zfs_onexit_fd_hold(int fd, minor_t *minorp)
 {
-	(void) fd;
+	if (zfsd_onexit_fd_hold_impl != NULL)
+		return (zfsd_onexit_fd_hold_impl(fd, minorp));
 	*minorp = 0;
 	return (NULL);
 }
@@ -440,34 +451,82 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 void
 zfs_onexit_fd_rele(zfs_file_t *fp)
 {
-	(void) fp;
+	if (zfsd_onexit_fd_rele_impl != NULL)
+		zfsd_onexit_fd_rele_impl(fp);
 }
 
 int
 zfs_onexit_add_cb(minor_t minor, void (*func)(void *), void *data,
     uintptr_t *action_handle)
 {
+	if (zfsd_onexit_add_cb_impl != NULL) {
+		return (zfsd_onexit_add_cb_impl(minor, func, data,
+		    action_handle));
+	}
 	(void) minor, (void) func, (void) data, (void) action_handle;
 	return (0);
+}
+
+void (*zfsd_zvol_create_minors_impl)(const char *);
+void (*zfsd_zvol_remove_minors_impl)(spa_t *, const char *, boolean_t);
+void (*zfsd_zvol_rename_minors_impl)(spa_t *, const char *, const char *,
+    boolean_t);
+int (*zfsd_zvol_release_for_destroy_impl)(const char *);
+
+/*
+ * True when this process is zfsd. ztest/zdb leave it 0 so zfs_create_fs
+ * is a no-op and pool create does not grow a ZPL root.
+ */
+int zfsd_active;
+
+static void (*zfsd_create_fs_fn)(objset_t *, cred_t *, nvlist_t *, dmu_tx_t *);
+
+void
+zfsd_set_create_fs(void (*fn)(objset_t *, cred_t *, nvlist_t *, dmu_tx_t *))
+{
+	zfsd_active = 1;
+	zfsd_create_fs_fn = fn;
+}
+
+void
+zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
+{
+	if (!zfsd_active || zfsd_create_fs_fn == NULL)
+		return;
+	zfsd_create_fs_fn(os, cr, zplprops, tx);
 }
 
 void
 zvol_create_minors(const char *name)
 {
-	(void) name;
+	if (zfsd_zvol_create_minors_impl != NULL)
+		zfsd_zvol_create_minors_impl(name);
 }
 
 void
 zvol_remove_minors(spa_t *spa, const char *name, boolean_t async)
 {
-	(void) spa, (void) name, (void) async;
+	if (zfsd_zvol_remove_minors_impl != NULL)
+		zfsd_zvol_remove_minors_impl(spa, name, async);
 }
 
 void
 zvol_rename_minors(spa_t *spa, const char *oldname, const char *newname,
     boolean_t async)
 {
+	if (zfsd_zvol_rename_minors_impl != NULL) {
+		zfsd_zvol_rename_minors_impl(spa, oldname, newname, async);
+		return;
+	}
 	(void) spa, (void) oldname, (void) newname, (void) async;
+}
+
+int
+zfsd_zvol_release_for_destroy(const char *name)
+{
+	if (zfsd_zvol_release_for_destroy_impl != NULL)
+		return (zfsd_zvol_release_for_destroy_impl(name));
+	return (0);
 }
 
 void

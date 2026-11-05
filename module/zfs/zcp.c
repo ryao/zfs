@@ -112,7 +112,8 @@ uint64_t zfs_lua_max_memlimit = ZCP_MAX_MEMLIMIT;
 /*
  * Forward declarations for mutually recursive functions
  */
-static int zcp_nvpair_value_to_lua(lua_State *, nvpair_t *, char *, int);
+static int zcp_nvpair_value_to_lua(lua_State *, nvpair_t *, char *, int, int);
+static int zcp_nvlist_to_lua_impl(lua_State *, nvlist_t *, char *, int, int);
 static int zcp_lua_to_nvlist_impl(lua_State *, int, nvlist_t *, const char *,
     int);
 
@@ -469,9 +470,34 @@ int
 zcp_nvlist_to_lua(lua_State *state, nvlist_t *nvl,
     char *errbuf, int errbuf_len)
 {
+	return (zcp_nvlist_to_lua_impl(state, nvl, errbuf, errbuf_len, 0));
+}
+
+/*
+ * Same conversion as zcp_nvlist_to_lua(), counting C frames in depth.
+ * Stop at ZCP_NVLIST_MAX_DEPTH. The output path already does this; the
+ * input path did not, so a 90-deep nvlist (nvlist_to_lua deeply_nested_neg,
+ * which is only required to fail) overflowed zfsd's 256KiB CUSE stack in
+ * nvpair_type() and killed the daemon.
+ */
+static int
+zcp_nvlist_to_lua_impl(lua_State *state, nvlist_t *nvl,
+    char *errbuf, int errbuf_len, int depth)
+{
 	nvpair_t *pair;
-	lua_newtable(state);
 	boolean_t has_values = B_FALSE;
+
+	if (depth >= ZCP_NVLIST_MAX_DEPTH) {
+		if (errbuf != NULL) {
+			(void) snprintf(errbuf, errbuf_len,
+			    "Maximum table depth (%d) exceeded for nvlist",
+			    ZCP_NVLIST_MAX_DEPTH);
+		}
+		return (SET_ERROR(EINVAL));
+	}
+
+	lua_newtable(state);
+
 	/*
 	 * If the list doesn't have any values, just convert it to a string
 	 * array.
@@ -496,7 +522,7 @@ zcp_nvlist_to_lua(lua_State *state, nvlist_t *nvl,
 		for (pair = nvlist_next_nvpair(nvl, NULL);
 		    pair != NULL; pair = nvlist_next_nvpair(nvl, pair)) {
 			int err = zcp_nvpair_value_to_lua(state, pair,
-			    errbuf, errbuf_len);
+			    errbuf, errbuf_len, depth);
 			if (err != 0) {
 				lua_pop(state, 1);
 				return (err);
@@ -516,7 +542,7 @@ zcp_nvlist_to_lua(lua_State *state, nvlist_t *nvl,
  */
 static int
 zcp_nvpair_value_to_lua(lua_State *state, nvpair_t *pair,
-    char *errbuf, int errbuf_len)
+    char *errbuf, int errbuf_len, int depth)
 {
 	int err = 0;
 
@@ -537,8 +563,9 @@ zcp_nvpair_value_to_lua(lua_State *state, nvpair_t *pair,
 		(void) lua_pushinteger(state, fnvpair_value_int64(pair));
 		break;
 	case DATA_TYPE_NVLIST:
-		err = zcp_nvlist_to_lua(state,
-		    fnvpair_value_nvlist(pair), errbuf, errbuf_len);
+		err = zcp_nvlist_to_lua_impl(state,
+		    fnvpair_value_nvlist(pair), errbuf, errbuf_len,
+		    depth + 1);
 		break;
 	case DATA_TYPE_STRING_ARRAY: {
 		const char **strarr;
@@ -766,18 +793,35 @@ zcp_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 	}
 }
 
+#ifndef _KERNEL
+zfsd_zcp_watch_f *zfsd_zcp_on_begin;
+zfsd_zcp_watch_f *zfsd_zcp_on_end;
+zfsd_zcp_gone_f *zfsd_zcp_client_gone;
+#endif
+
 static void
 zcp_lua_counthook(lua_State *state, lua_Debug *ar)
 {
+	zcp_run_info_t *ri;
+	boolean_t cancel;
+
 	(void) ar;
 	lua_getfield(state, LUA_REGISTRYINDEX, ZCP_RUN_INFO_KEY);
-	zcp_run_info_t *ri = lua_touserdata(state, -1);
+	ri = lua_touserdata(state, -1);
 
 	/*
 	 * Check if we were canceled while waiting for the
-	 * txg to sync or from our open context thread
+	 * txg to sync or from our open context thread.
+	 * In userspace issig() is never true and cv_wait_sig()
+	 * does not return EINTR, so the daemon polls the client.
 	 */
-	if (ri->zri_canceled || (!ri->zri_sync && issig())) {
+	cancel = ri->zri_canceled;
+#ifndef _KERNEL
+	if (!cancel && zfsd_zcp_client_gone != NULL &&
+	    zfsd_zcp_client_gone(ri))
+		cancel = B_TRUE;
+#endif
+	if (cancel || (!ri->zri_sync && issig())) {
 		ri->zri_canceled = B_TRUE;
 		(void) lua_pushstring(state, "Channel program was canceled.");
 		(void) lua_error(state);
@@ -1129,7 +1173,7 @@ zcp_eval(const char *poolname, const char *program, boolean_t sync,
 	 */
 	char errmsg[128];
 	err = zcp_nvpair_value_to_lua(state, nvarg,
-	    errmsg, sizeof (errmsg));
+	    errmsg, sizeof (errmsg), 0);
 	if (err != 0) {
 		fnvlist_add_string(outnvl, ZCP_RET_ERROR, errmsg);
 		lua_close(state);
@@ -1152,6 +1196,13 @@ zcp_eval(const char *poolname, const char *program, boolean_t sync,
 	runinfo.zri_curinstrs = 0;
 	runinfo.zri_maxinstrs = instrlimit;
 	runinfo.zri_new_zvols = fnvlist_alloc();
+#ifndef _KERNEL
+	runinfo.zri_client_tgid = 0;
+	runinfo.zri_client_start = 0;
+	runinfo.zri_cancel_check = 0;
+	if (zfsd_zcp_on_begin != NULL)
+		zfsd_zcp_on_begin(&runinfo);
+#endif
 
 	if (sync) {
 		err = dsl_sync_task_sig(poolname, NULL, zcp_eval_sync,
@@ -1161,6 +1212,10 @@ zcp_eval(const char *poolname, const char *program, boolean_t sync,
 	} else {
 		zcp_eval_open(&runinfo, poolname);
 	}
+#ifndef _KERNEL
+	if (zfsd_zcp_on_end != NULL)
+		zfsd_zcp_on_end(&runinfo);
+#endif
 	lua_close(state);
 
 	crfree(cr);

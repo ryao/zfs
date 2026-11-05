@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 
 typedef struct zfs_onexit {
 	kmutex_t	zo_lock;
@@ -46,6 +46,17 @@ extern zfs_file_t *zfs_onexit_fd_hold(int fd, minor_t *minorp);
 extern void zfs_onexit_fd_rele(zfs_file_t *);
 extern int zfs_onexit_add_cb(minor_t minor, void (*func)(void *), void *data,
     uintptr_t *action_handle);
+
+#ifndef _KERNEL
+/*
+ * zfsd fills these so libzpool's stubs dispatch to the per-open /dev/zfs
+ * client. NULL in ztest: cleanup_fd is ignored.
+ */
+extern zfs_file_t *(*zfsd_onexit_fd_hold_impl)(int, minor_t *);
+extern void (*zfsd_onexit_fd_rele_impl)(zfs_file_t *);
+extern int (*zfsd_onexit_add_cb_impl)(minor_t, void (*)(void *), void *,
+    uintptr_t *);
+#endif
 
 #ifdef	__cplusplus
 }

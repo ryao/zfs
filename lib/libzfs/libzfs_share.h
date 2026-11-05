@@ -72,7 +72,7 @@ extern const char *const sa_protocol_names[SA_PROTOCOL_COUNT];
 /* share control */
 extern int sa_enable_share(const char *, const char *, const char *,
     enum sa_protocol);
-extern int sa_disable_share(const char *, enum sa_protocol);
+extern int sa_disable_share(const char *, const char *, enum sa_protocol);
 extern boolean_t sa_is_shared(const char *, enum sa_protocol);
 extern void sa_commit_shares(enum sa_protocol);
 extern void sa_truncate_shares(enum sa_protocol);

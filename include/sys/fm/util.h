@@ -61,7 +61,7 @@ typedef struct erpt_dump {
 	} ed_tod_base;
 } erpt_dump_t;
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 
 #define	ZEVENT_SHUTDOWN		0x1
 
@@ -103,7 +103,7 @@ extern void zfs_ereport_fini(void);
 static inline void fm_init(void) { }
 static inline void fm_fini(void) { }
 
-#endif  /* _KERNEL */
+#endif  /* _KERNEL || ZFSD_BUILD */
 
 #ifdef	__cplusplus
 }

@@ -154,6 +154,14 @@ extern boolean_t txg_list_member(txg_list_t *tl, void *p, uint64_t txg);
 extern void *txg_list_head(txg_list_t *tl, uint64_t txg);
 extern void *txg_list_next(txg_list_t *tl, void *p, uint64_t txg);
 
+#ifndef _KERNEL
+/*
+ * True on the txg_sync thread. That thread holds dp_config_rwlock as
+ * writer across sync tasks. A reader enter from it asserts.
+ */
+extern boolean_t txg_thread_is_syncing(void);
+#endif
+
 /* Global tuning */
 extern uint_t zfs_txg_timeout;
 

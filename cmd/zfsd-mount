@@ -1,0 +1,194 @@
+#!/bin/sh
+# ZFSD_MOUNT_WRAPPER=1
+# SPDX-License-Identifier: CDDL-1.0
+#
+# Installed as $(sbindir)/mount. The ZTS constrained path searches
+# /usr/local/sbin before /usr/bin, so this is the mount(8) the suite runs.
+#
+# util-linux calls mount(2) directly for "mount -o remount,rw dataset mnt"
+# and does not consult /sbin/mount.<type>. Linux FUSE then accepts the
+# remount and clears MS_RDONLY. Kernel ZFS rejects that in zfs_remount()
+# when the dataset is a snapshot or the pool was imported read-only.
+# Everything else is handed to the real mount(8).
+
+set -u
+
+REAL=""
+for c in /usr/bin/mount /bin/mount; do
+	if [ -x "$c" ]; then
+		REAL=$c
+		break
+	fi
+done
+if [ -z "$REAL" ]; then
+	echo "mount: system mount(8) not found" >&2
+	exit 127
+fi
+
+passthrough() {
+	exec "$REAL" "$@"
+}
+
+# Kernel zfs.ko publishes /dev/zfs as misc major 10. zfsd CUSE does not.
+if [ ! -c /dev/zfs ]; then
+	passthrough "$@"
+fi
+maj=$(/usr/bin/stat -c '%t' /dev/zfs 2>/dev/null || true)
+case "$maj" in
+a|A|"") passthrough "$@" ;;
+esac
+
+want_remount=0
+want_ro=0
+p1=""
+p2=""
+np=0
+next_opt=0
+for a in "$@"; do
+	if [ "$next_opt" -eq 1 ]; then
+		next_opt=0
+		rest=$a
+		while [ -n "$rest" ]; do
+			tok=${rest%%,*}
+			case "$tok" in
+			remount) want_remount=1 ;;
+			ro) want_ro=1 ;;
+			rw) want_ro=0 ;;
+			esac
+			case "$rest" in
+			*,*) rest=${rest#*,} ;;
+			*) rest="" ;;
+			esac
+		done
+		continue
+	fi
+	case "$a" in
+	-o|--options)
+		next_opt=1
+		;;
+	--options=*)
+		rest=${a#--options=}
+		while [ -n "$rest" ]; do
+			tok=${rest%%,*}
+			case "$tok" in
+			remount) want_remount=1 ;;
+			ro) want_ro=1 ;;
+			rw) want_ro=0 ;;
+			esac
+			case "$rest" in
+			*,*) rest=${rest#*,} ;;
+			*) rest="" ;;
+			esac
+		done
+		;;
+	-o?*)
+		rest=${a#-o}
+		while [ -n "$rest" ]; do
+			tok=${rest%%,*}
+			case "$tok" in
+			remount) want_remount=1 ;;
+			ro) want_ro=1 ;;
+			rw) want_ro=0 ;;
+			esac
+			case "$rest" in
+			*,*) rest=${rest#*,} ;;
+			*) rest="" ;;
+			esac
+		done
+		;;
+	-*)
+		;;
+	*)
+		np=$((np + 1))
+		if [ "$np" -eq 1 ]; then
+			p1=$a
+		else
+			p2=$a
+		fi
+		;;
+	esac
+done
+
+if [ "$want_remount" -ne 1 ] || [ "$want_ro" -eq 1 ]; then
+	passthrough "$@"
+fi
+
+if [ "$np" -ge 2 ]; then
+	mp=$p2
+else
+	mp=$p1
+fi
+
+src=""
+fstype=""
+if [ -n "$mp" ]; then
+	cmp=$(/usr/bin/readlink -f "$mp" 2>/dev/null || echo "$mp")
+	info=$(/usr/bin/awk -v m="$cmp" '
+		$3 == "fuse.zfs" || $3 == "fuse.uzfs" || $3 == "zfs" {
+			dir = $2
+			gsub(/\\040/, " ", dir)
+			if (dir == m) {
+				print $1 "\t" $3
+				exit
+			}
+		}
+	' /proc/mounts 2>/dev/null || true)
+	src=${info%%	*}
+	fstype=${info#*	}
+	if [ "$src" = "$info" ]; then
+		fstype=""
+	fi
+fi
+
+ds=""
+if [ -n "$src" ]; then
+	ds=$src
+elif [ "$np" -ge 2 ]; then
+	ds=$p1
+fi
+
+reject() {
+	echo "mount: cannot remount '$1' read-write: read-only filesystem" >&2
+	exit 32
+}
+
+case "$ds" in
+*@*)
+	case "$fstype" in
+	""|zfs|fuse.zfs|fuse.uzfs) reject "$ds" ;;
+	esac
+	;;
+esac
+
+if [ -z "$ds" ]; then
+	passthrough "$@"
+fi
+case "$fstype" in
+""|zfs|fuse.zfs|fuse.uzfs) ;;
+*) passthrough "$@" ;;
+esac
+
+pool=${ds%%/*}
+pool=${pool%%@*}
+ZPOOL=""
+for z in /opt/zfs/sbin/zpool /usr/local/sbin/zpool /usr/sbin/zpool; do
+	if [ -x "$z" ]; then
+		ZPOOL=$z
+		break
+	fi
+done
+if [ -z "$ZPOOL" ]; then
+	passthrough "$@"
+fi
+
+libdir=""
+if [ -d /opt/zfs/lib ]; then
+	libdir=/opt/zfs/lib
+fi
+ro=$(LD_LIBRARY_PATH="${libdir}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+	"$ZPOOL" get -H -o value readonly "$pool" 2>/dev/null || true)
+if [ "$ro" = "on" ]; then
+	reject "$ds"
+fi
+
+passthrough "$@"

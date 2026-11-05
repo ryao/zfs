@@ -608,7 +608,7 @@ zfs_iter_mounted(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 
 	while (err == 0 && getmntent(mnttab, &entry) == 0) {
 		/* Ignore non-ZFS entries */
-		if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+		if (!zfs_fstype_is_zfs(entry.mnt_fstype))
 			continue;
 
 		/* Ignore datasets not within the provided dataset */

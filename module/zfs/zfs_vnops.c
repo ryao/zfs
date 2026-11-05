@@ -820,7 +820,8 @@ zfs_write(znode_t *zp, zfs_uio_t *uio, int ioflag, cred_t *cr)
 		}
 
 		uint64_t blksz;
-		if (lr->lr_length == UINT64_MAX && zp->z_size <= zp->z_blksz) {
+		if (lr->lr_length == UINT64_MAX &&
+		    (zp->z_blksz == 0 || zp->z_size <= zp->z_blksz)) {
 			if (zp->z_blksz > zfsvfs->z_max_blksz &&
 			    !ISP2(zp->z_blksz)) {
 				/*

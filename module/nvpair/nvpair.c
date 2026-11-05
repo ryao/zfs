@@ -39,6 +39,7 @@
 #include <sys/sysmacros.h>
 #ifndef _KERNEL
 #include <stddef.h>
+#include <sys/kmem.h>
 #endif
 
 #define	skip_whitespace(p)	while ((*(p) == ' ') || (*(p) == '\t')) (p)++
@@ -566,7 +567,16 @@ nvlist_nv_alloc(int kmflag)
 		return (nv_alloc_pushpage);
 	}
 #else
-	(void) kmflag;
+	/*
+	 * Userspace libnvpair is built without _KERNEL, so the switch
+	 * above was compiled out and every nvlist — including
+	 * nvlist_pack(KM_SLEEP) — used nv_alloc_nosleep. kmem_alloc()
+	 * then fails once under commit pressure and fnvlist_pack()
+	 * VERIFY-aborts the whole zfsd, dropping /dev/zfs and every
+	 * FUSE mount. Honor KM_SLEEP (KM_PUSHPAGE is the same bit).
+	 */
+	if ((kmflag & KM_SLEEP) != 0)
+		return (nv_alloc_sleep);
 	return (nv_alloc_nosleep);
 #endif /* _KERNEL */
 }

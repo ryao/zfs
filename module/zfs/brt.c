@@ -499,7 +499,24 @@ brt_vdev_realloc(spa_t *spa, brt_vdev_t *brtvd)
 
 	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
 	vd = vdev_lookup_top(spa, brtvd->bv_vdevid);
-	size = (vdev_get_min_asize(vd) - 1) / spa->spa_brt_rangesize + 1;
+	{
+		uint64_t asize = (vd == NULL) ? 0 : vdev_get_min_asize(vd);
+		uint64_t range = spa->spa_brt_rangesize;
+
+		/*
+		 * asize == 0 underflows (0 - 1) / range to ~2^64 entries.
+		 * The following KM_SLEEP allocation is then multi-terabyte.
+		 * Under vm.overcommit_memory=2 malloc fails forever and the
+		 * thread never returns to FUSE, so ZTS kills the test at
+		 * its timeout. A vdev that is not open yet has nothing to
+		 * track; one empty range is enough until the next realloc.
+		 */
+		if (range == 0)
+			range = BRT_RANGESIZE;
+		if (asize == 0)
+			asize = range;
+		size = (asize - 1) / range + 1;
+	}
 	spa_config_exit(spa, SCL_VDEV, FTAG);
 
 	nblocks = BRT_RANGESIZE_TO_NBLOCKS(size);

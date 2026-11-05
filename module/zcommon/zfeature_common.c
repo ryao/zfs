@@ -22,10 +22,15 @@
 
 #ifndef _KERNEL
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <dirent.h>
 #include <search.h>
 #include <sys/stat.h>
+#ifdef __linux__
+#include <sys/sysmacros.h>
+#endif
 #endif
 #include <sys/debug.h>
 #include <sys/fs/zfs.h>
@@ -185,11 +190,42 @@ zfs_mod_list_supported(const char *scope)
 			sysfs_dir = opendir(path);
 	}
 	if (sysfs_dir == NULL) {
-		ret->all_features = errno == ENOENT &&
-		    (access(ZFS_SYSFS_DIR, F_OK) == 0 ||
+		int saved = errno;
+		boolean_t have_root;
+		boolean_t cuse = B_FALSE;
+
+		have_root = (access(ZFS_SYSFS_DIR, F_OK) == 0 ||
 		    access(ZFS_SYSFS_ALT_DIR, F_OK) == 0);
+		/*
+		 * Kernel zfs.ko publishes /dev/zfs as misc major 10.
+		 * zfsd's CUSE node uses a different major. Advertise
+		 * every feature only for the old-kernel case (sysfs
+		 * root present, scope dir missing) or for a CUSE
+		 * control node. A container without /sys talking to
+		 * a real kernel module fails closed. If /dev/zfs is
+		 * the kernel node, a leftover /dev/uzfs is ignored.
+		 */
+#ifdef __linux__
+		{
+			struct stat st;
+#ifndef MISC_MAJOR
+#define	MISC_MAJOR	10
+#endif
+			if (stat(ZFS_DEV, &st) == 0 && S_ISCHR(st.st_mode)) {
+				if (major(st.st_rdev) != MISC_MAJOR)
+					cuse = B_TRUE;
+			} else if (stat("/dev/uzfs", &st) == 0 &&
+			    S_ISCHR(st.st_mode) &&
+			    major(st.st_rdev) != MISC_MAJOR) {
+				cuse = B_TRUE;
+			}
+		}
+#endif
+		ret->all_features = (saved == ENOENT &&
+		    (have_root || cuse));
 		return (ret);
 	}
+
 
 	struct dirent *node;
 	while ((node = readdir(sysfs_dir)) != NULL) {

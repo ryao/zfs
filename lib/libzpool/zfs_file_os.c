@@ -18,14 +18,20 @@
 
 #include <sys/zfs_context.h>
 #include <sys/zfs_file.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
 
 typedef struct {
 	int f_fd;
 	int f_dump_fd;
+	int f_stolen;
 } file_t;
 
 /* If set, all blocks read will be copied to the specified directory. */
 char *vn_dumpdir = NULL;
+
+__thread int (*zfsd_file_steal_hook)(int fd) = NULL;
 
 /*
  * Open file
@@ -146,36 +152,79 @@ zfs_file_write(zfs_file_t *zfp, const void *buf, size_t count, ssize_t *resid)
  *
  * Returns 0 on success errno on failure.
  */
+#ifdef __linux__
+/*
+ * Block vdevs are opened O_DIRECT. Linux then rejects a pread/pwrite
+ * whose buffer is not logical-block aligned (EINVAL) and the old
+ * code abort()ed zfsd. ABD data is not aligned, so bounce those I/Os.
+ * A still-misaligned count or offset is returned to the caller; it
+ * must not take the daemon down.
+ */
+static int
+zfs_file_is_odirect(int fd)
+{
+	int fl = fcntl(fd, F_GETFL);
+
+	return (fl >= 0 && (fl & O_DIRECT) != 0);
+}
+
+static int
+zfs_odirect_bounce(int fd, const void *buf, size_t count, loff_t off,
+    int copyin, void **bouncep)
+{
+	void *abuf;
+
+	*bouncep = NULL;
+	if (!zfs_file_is_odirect(fd))
+		return (0);
+	if ((((uintptr_t)buf | (uintptr_t)count | (uintptr_t)off) & 511) == 0)
+		return (0);
+	if ((count & 511) != 0 || (off & 511) != 0)
+		return (EINVAL);
+	if (posix_memalign(&abuf, 4096, count == 0 ? 512 : count) != 0)
+		return (ENOMEM);
+	if (copyin && count != 0)
+		memcpy(abuf, buf, count);
+	*bouncep = abuf;
+	return (0);
+}
+#endif
+
 int
 zfs_file_pwrite(zfs_file_t *zfp, const void *buf,
     size_t count, loff_t pos, uint8_t ashift, ssize_t *resid)
 {
 	file_t *fp = zfp;
-	ssize_t rc, split, done;
+	ssize_t rc, split, done = 0;
 	int sectors;
+	const void *iobuf = buf;
+#ifdef __linux__
+	void *bounce = NULL;
+	int berr;
+#endif
 
 	/*
 	 * To simulate partial disk writes, we split writes into two
 	 * system calls so that the process can be killed in between.
 	 * This is used by ztest to simulate realistic failure modes.
 	 */
+#ifdef __linux__
+	berr = zfs_odirect_bounce(fp->f_fd, buf, count, pos, 1, &bounce);
+	if (berr != 0)
+		return (berr);
+	if (bounce != NULL)
+		iobuf = bounce;
+#endif
 	sectors = count >> ashift;
 	split = (sectors > 0 ? rand() % sectors : 0) << ashift;
-	rc = pwrite64(fp->f_fd, buf, split, pos);
+	rc = pwrite64(fp->f_fd, iobuf, split, pos);
 	if (rc != -1) {
 		done = rc;
-		rc = pwrite64(fp->f_fd, (char *)buf + split,
+		rc = pwrite64(fp->f_fd, (char *)iobuf + split,
 		    count - split, pos + split);
 	}
 #ifdef __linux__
-	if (rc == -1 && errno == EINVAL) {
-		/*
-		 * Under Linux, this most likely means an alignment issue
-		 * (memory or disk) due to O_DIRECT, so we abort() in order
-		 * to catch the offender.
-		 */
-		abort();
-	}
+	free(bounce);
 #endif
 
 	if (rc < 0)
@@ -239,20 +288,26 @@ zfs_file_pread(zfs_file_t *zfp, void *buf, size_t count, loff_t off,
 {
 	file_t *fp = zfp;
 	ssize_t rc;
-
-	rc = pread64(fp->f_fd, buf, count, off);
-	if (rc < 0) {
+	void *iobuf = buf;
 #ifdef __linux__
-		/*
-		 * Under Linux, this most likely means an alignment issue
-		 * (memory or disk) due to O_DIRECT, so we abort() in order to
-		 * catch the offender.
-		 */
-		if (errno == EINVAL)
-			abort();
+	void *bounce = NULL;
+	int berr;
+
+	berr = zfs_odirect_bounce(fp->f_fd, buf, count, off, 0, &bounce);
+	if (berr != 0)
+		return (berr);
+	if (bounce != NULL)
+		iobuf = bounce;
 #endif
+
+	rc = pread64(fp->f_fd, iobuf, count, off);
+#ifdef __linux__
+	if (rc > 0 && bounce != NULL)
+		memcpy(buf, bounce, rc);
+	free(bounce);
+#endif
+	if (rc < 0)
 		return (errno);
-	}
 
 	if (fp->f_dump_fd != -1) {
 		int status;
@@ -410,29 +465,64 @@ zfs_file_unlink(const char *path)
  *
  * fd - input file descriptor
  *
- * Returns pointer to file struct or NULL.
+ * Returns pointer to file struct or NULL. On the zfsd ioctl path the
+ * fd number is the caller's; zfsd_file_steal_hook (TLS) dup's it into
+ * this process. f_stolen means zfs_file_put() closes that dup; the
+ * caller's fd is not closed. With no hook this does not dup or close.
  */
 zfs_file_t *
 zfs_file_get(int fd)
 {
-	/*
-	 * Note that we deliberately don't try to validate the fd. The point is
-	 * to return a zfs_file_t that represents that fd, whatever it is. If
-	 * its not valid for some operation, then that operation will fail when
-	 * attempted.
-	 */
-	file_t *fp = kmem_zalloc(sizeof (file_t), KM_SLEEP);
-	fp->f_fd = fd;
+	file_t *fp;
+	struct stat64 st;
+	int real_fd = fd;
+	int stolen = 0;
+
+	if (fd < 0)
+		return (NULL);
+	if (zfsd_file_steal_hook != NULL) {
+		real_fd = zfsd_file_steal_hook(fd);
+		if (real_fd < 0)
+			return (NULL);
+		stolen = 1;
+	}
+	if (fstat64(real_fd, &st) != 0) {
+		if (stolen)
+			(void) close(real_fd);
+		return (NULL);
+	}
+	fp = kmem_zalloc(sizeof (file_t), KM_SLEEP);
+	fp->f_fd = real_fd;
 	fp->f_dump_fd = -1;
+	fp->f_stolen = stolen;
 	return (fp);
 }
+
 /*
  * Drop reference to file pointer
  *
  * fp - pointer to file struct
  */
 void
-zfs_file_put(zfs_file_t *fp)
+zfs_file_put(zfs_file_t *zfp)
 {
+	file_t *fp = zfp;
+
+	if (fp == NULL)
+		return;
+	if (fp->f_stolen && fp->f_fd >= 0)
+		(void) close(fp->f_fd);
 	kmem_free(fp, sizeof (file_t));
+}
+
+void *
+zfs_file_private(zfs_file_t *zfp)
+{
+	/*
+	 * Userspace zfsdev_private_set_state() stores the zfsdev_state_t*
+	 * through the pointer this returns, and zfsdev_getminor() compares
+	 * that pointer with the state object. The previous zfsd object was
+	 * the file itself, so keep returning it.
+	 */
+	return (zfp);
 }

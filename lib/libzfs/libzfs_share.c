@@ -47,6 +47,27 @@ const char *const sa_protocol_names[SA_PROTOCOL_COUNT] = {
 static const sa_fstype_t *fstypes[SA_PROTOCOL_COUNT] =
 	{&libshare_nfs_type, &libshare_smb_type};
 
+static int
+sa_zfsd_err(int err)
+{
+	switch (err) {
+	case 0:
+		return (SA_OK);
+	case EPERM:
+	case EACCES:
+		return (SA_NO_PERMISSION);
+	case EINVAL:
+		return (SA_SYNTAX_ERR);
+	case ENOMEM:
+		return (SA_NO_MEMORY);
+	case ENOSYS:
+	case ENOTSUP:
+		return (SA_NOT_SUPPORTED);
+	default:
+		return (SA_SYSTEM_ERR);
+	}
+}
+
 int
 sa_enable_share(const char *zfsname, const char *mountpoint,
     const char *shareopts, enum sa_protocol protocol)
@@ -57,17 +78,26 @@ sa_enable_share(const char *zfsname, const char *mountpoint,
 	if (error != SA_OK)
 		return (error);
 
+	if (lzc_control_is_zfsd())
+		return (sa_zfsd_err(lzc_zfsd_share(zfsname, mountpoint,
+		    shareopts, (uint64_t)protocol)));
+
 	const struct sa_share_impl args =
 	    init_share(zfsname, mountpoint, shareopts);
 	return (fstypes[protocol]->enable_share(&args));
 }
 
 int
-sa_disable_share(const char *mountpoint, enum sa_protocol protocol)
+sa_disable_share(const char *zfsname, const char *mountpoint,
+    enum sa_protocol protocol)
 {
 	VALIDATE_PROTOCOL(protocol, SA_INVALID_PROTOCOL);
 
-	const struct sa_share_impl args = init_share(NULL, mountpoint, NULL);
+	if (lzc_control_is_zfsd())
+		return (sa_zfsd_err(lzc_zfsd_unshare(zfsname, mountpoint,
+		    (uint64_t)protocol)));
+
+	const struct sa_share_impl args = init_share(zfsname, mountpoint, NULL);
 	return (fstypes[protocol]->disable_share(&args));
 }
 
@@ -86,6 +116,11 @@ sa_commit_shares(enum sa_protocol protocol)
 	/* CSTYLED */
 	VALIDATE_PROTOCOL(protocol, );
 
+	if (lzc_control_is_zfsd()) {
+		(void) lzc_zfsd_share_commit((uint64_t)protocol);
+		return;
+	}
+
 	fstypes[protocol]->commit_shares();
 }
 
@@ -94,6 +129,11 @@ sa_truncate_shares(enum sa_protocol protocol)
 {
 	/* CSTYLED */
 	VALIDATE_PROTOCOL(protocol, );
+
+	if (lzc_control_is_zfsd()) {
+		(void) lzc_zfsd_share_truncate((uint64_t)protocol);
+		return;
+	}
 
 	if (fstypes[protocol]->truncate_shares != NULL)
 		fstypes[protocol]->truncate_shares();

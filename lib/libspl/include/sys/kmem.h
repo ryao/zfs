@@ -43,6 +43,12 @@ extern void *kmem_alloc_aligned(size_t size, size_t align, int flags);
 
 extern void kmem_free_aligned(void *ptr, size_t size);
 
+/*
+ * Called when a KM_SLEEP allocation fails. The callback must not
+ * block on memory and must tolerate re-entry from the allocator.
+ */
+extern void kmem_register_reclaim(void (*cb)(void));
+
 extern char *kmem_strdup(const char *str);
 extern void kmem_strfree(char *str);
 

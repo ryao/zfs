@@ -196,7 +196,11 @@ typedef struct zfs_acl_ids {
 struct znode;
 struct zfsvfs;
 
-#ifdef _KERNEL
+/* Shared core implementations. */
+void zfs_oldace_byteswap(ace_t *, int);
+void zfs_ace_byteswap(void *, size_t, boolean_t);
+
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 
 /* Platform-specific implementations called by core. */
 int zfs_getacl(struct znode *, vsecattr_t *, boolean_t, cred_t *);
@@ -210,10 +214,6 @@ uint64_t zfs_mode_compute(uint64_t, zfs_acl_t *,
     uint64_t *, uint64_t, uint64_t);
 int zfs_acl_node_read(struct znode *, boolean_t, zfs_acl_t **, boolean_t);
 int zfs_acl_chown_setattr(struct znode *);
-
-/* Shared core implementations. */
-void zfs_oldace_byteswap(ace_t *, int);
-void zfs_ace_byteswap(void *, size_t, boolean_t);
 
 #endif
 

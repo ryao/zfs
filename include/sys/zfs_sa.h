@@ -120,7 +120,7 @@ typedef struct znode_phys {
 	 */
 } znode_phys_t;
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(ZFSD_BUILD)
 
 #define	DXATTR_MAX_ENTRY_SIZE	(32768)
 #define	DXATTR_MAX_SA_SIZE	(SPA_OLD_MAXBLOCKSIZE >> 1)

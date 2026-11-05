@@ -3567,7 +3567,8 @@ zfs_ioc_pool_get_props(const char *pool, nvlist_t *innvl, nvlist_t *outnvl)
 		 * anyway.
 		 */
 		spa_namespace_enter(FTAG);
-		if ((spa = spa_lookup(pool)) != NULL) {
+		if ((spa = spa_lookup(pool)) != NULL &&
+		    spa_get_dsl(spa) != NULL) {
 			error = spa_prop_get(spa, outnvl);
 			if (error == 0 && props != NULL)
 				error = spa_prop_get_nvlist(spa, props, n_props,
@@ -4434,7 +4435,15 @@ zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 
 		zfs_unmount_snap(nvpair_name(pair));
 		if (spa_open(name, &spa, FTAG) == 0) {
+#ifndef _KERNEL
+			/*
+			 * The check below treats a serve-thread objset
+			 * own as busy. Wait until the minor is gone.
+			 */
+			zvol_remove_minors(spa, name, B_FALSE);
+#else
 			zvol_remove_minors(spa, name, B_TRUE);
+#endif
 			spa_close(spa, FTAG);
 		}
 	}
@@ -4717,6 +4726,25 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 		return (err);
 	ost = dmu_objset_type(os);
 	dmu_objset_rele(os, FTAG);
+
+#ifndef _KERNEL
+	/*
+	 * Userspace keeps the zvol objset owned for the life of the
+	 * NBD/ublk serve thread so zil_close is not per bio. That own
+	 * is a long hold. dsl_destroy_*_check returns EBUSY while it
+	 * stands, and zvol_remove_minors used to run only after the
+	 * check passed, so zfs destroy of a published zvol never
+	 * succeeded. bootfs_002_neg left testpool/vol behind; later
+	 * creates failed with "dataset already exists", and the
+	 * channel-program cleanup's zpool destroy sat in the FUSE
+	 * ioctl until ZTS killed the rest of the run.
+	 *
+	 * Drop an unmounted minor first. A zvol that is still mounted
+	 * stays owned, and the check still returns EBUSY.
+	 */
+	if (ost == DMU_OST_ZVOL)
+		(void) zfsd_zvol_release_for_destroy(zc->zc_name);
+#endif
 
 	if (ost == DMU_OST_ZFS)
 		zfs_unmount_snap(zc->zc_name);
@@ -8008,7 +8036,7 @@ zfs_ioctl_register_dataset_modify(zfs_ioc_t ioc, zfs_ioc_legacy_func_t *func,
 	    DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY);
 }
 
-static void
+void
 zfs_ioctl_init(void)
 {
 	zfs_ioctl_register("snapshot", ZFS_IOC_SNAPSHOT,
@@ -8348,6 +8376,17 @@ zfs_ioctl_init(void)
 	    zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
 	zfs_ioctl_register_legacy(ZFS_IOC_EVENTS_SEEK, zfs_ioc_events_seek,
 	    zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+
+#ifndef _KERNEL
+	zfs_ioctl_register_legacy(ZFS_IOC_ZFSD_MOUNT, zfs_ioc_zfsd_mount,
+	    zfs_secpolicy_zfsd_mount, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+	zfs_ioctl_register_legacy(ZFS_IOC_ZFSD_UNMOUNT, zfs_ioc_zfsd_unmount,
+	    zfs_secpolicy_zfsd_mount, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+	zfs_ioctl_register_legacy(ZFS_IOC_ZFSD_SHARE, zfs_ioc_zfsd_share,
+	    zfs_secpolicy_zfsd_share, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+	zfs_ioctl_register_legacy(ZFS_IOC_ZFSD_UNSHARE, zfs_ioc_zfsd_unshare,
+	    zfs_secpolicy_zfsd_share, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+#endif
 
 	zfs_ioctl_init_os();
 }

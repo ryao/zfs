@@ -33,6 +33,16 @@ extern "C" {
 
 _LIBZFS_CORE_H int libzfs_core_init(void);
 _LIBZFS_CORE_H void libzfs_core_fini(void);
+_LIBZFS_CORE_H const char *zfs_dev_path(void);
+_LIBZFS_CORE_H int lzc_control_is_zfsd(void);
+_LIBZFS_CORE_H int lzc_zfsd_mount(const char *, const char *, uint64_t,
+    const char *);
+_LIBZFS_CORE_H int lzc_zfsd_unmount(const char *, const char *, uint64_t);
+_LIBZFS_CORE_H int lzc_zfsd_share(const char *, const char *, const char *,
+    uint64_t);
+_LIBZFS_CORE_H int lzc_zfsd_unshare(const char *, const char *, uint64_t);
+_LIBZFS_CORE_H int lzc_zfsd_share_commit(uint64_t);
+_LIBZFS_CORE_H int lzc_zfsd_share_truncate(uint64_t);
 
 struct zfs_cmd;
 _LIBZFS_CORE_H int lzc_ioctl_fd(int, unsigned long, struct zfs_cmd *);

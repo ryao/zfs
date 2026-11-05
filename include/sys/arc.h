@@ -44,6 +44,15 @@ extern "C" {
  */
 #define	MIN_ARC_MAX	DMU_MAX_ACCESS
 
+#ifndef _KERNEL
+/*
+ * zfsd sets this before kernel_init() so userland ARC honors a
+ * pre-set zfs_arc_max. Left false for ztest/zdb/zhack so their
+ * historical arc_c_min = arc_c_max/2 path is unchanged.
+ */
+extern boolean_t zfs_arc_honor_max;
+#endif
+
 #define	HDR_SET_LSIZE(hdr, x) do { \
 	ASSERT(IS_P2ALIGNED(x, 1U << SPA_MINBLOCKSHIFT)); \
 	(hdr)->b_lsize = ((x) >> SPA_MINBLOCKSHIFT); \
